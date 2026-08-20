@@ -125,6 +125,15 @@ param networkingProfile string = 'public'
 @description('Existing delegated subnet resource ID for Premium v2 outbound VNet integration.')
 param apimSubnetResourceId string = ''
 
+@description('Existing subnet resource ID for the primary APIM private endpoint.')
+param apimPrivateEndpointSubnetResourceId string = ''
+
+@description('Existing delegated subnet resource ID for secondary APIM outbound VNet integration.')
+param secondaryApimSubnetResourceId string = ''
+
+@description('Existing subnet resource ID for the secondary APIM private endpoint.')
+param secondaryApimPrivateEndpointSubnetResourceId string = ''
+
 @description('Existing private DNS zone resource ID for privatelink.azure-api.net.')
 param apimPrivateDnsZoneResourceId string = ''
 
@@ -165,6 +174,7 @@ module primaryApim './modules/apim.bicep' = {
     zoneRedundant: zoneRedundant
     networkingProfile: networkingProfile
     apimSubnetResourceId: apimSubnetResourceId
+    apimPrivateEndpointSubnetResourceId: apimPrivateEndpointSubnetResourceId
     apimPrivateDnsZoneResourceId: apimPrivateDnsZoneResourceId
     observabilityEnabled: observabilityEnabled
     actionGroupResourceId: actionGroupResourceId
@@ -195,7 +205,8 @@ module secondaryApim './modules/apim.bicep' = if (deploySecondary) {
     scaleInCpuThreshold: scaleInCpuThreshold
     zoneRedundant: zoneRedundant
     networkingProfile: networkingProfile
-    apimSubnetResourceId: apimSubnetResourceId
+    apimSubnetResourceId: secondaryApimSubnetResourceId
+    apimPrivateEndpointSubnetResourceId: secondaryApimPrivateEndpointSubnetResourceId
     apimPrivateDnsZoneResourceId: apimPrivateDnsZoneResourceId
     observabilityEnabled: observabilityEnabled
     actionGroupResourceId: actionGroupResourceId

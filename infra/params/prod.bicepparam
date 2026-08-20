@@ -37,6 +37,9 @@ param zoneRedundant = true
 
 param networkingProfile = readEnvironmentVariable('APIM_NETWORKING_PROFILE')
 param apimSubnetResourceId = readEnvironmentVariable('APIM_SUBNET_RESOURCE_ID')
+param apimPrivateEndpointSubnetResourceId = readEnvironmentVariable('APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID')
+param secondaryApimSubnetResourceId = readEnvironmentVariable('APIM_SECONDARY_SUBNET_RESOURCE_ID')
+param secondaryApimPrivateEndpointSubnetResourceId = readEnvironmentVariable('APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID')
 param apimPrivateDnsZoneResourceId = readEnvironmentVariable('APIM_PRIVATE_DNS_ZONE_RESOURCE_ID')
 param actionGroupResourceId = readEnvironmentVariable('ACTION_GROUP_RESOURCE_ID')
 param trafficManagerName = readEnvironmentVariable('TRAFFIC_MANAGER_NAME')

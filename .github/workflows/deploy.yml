@@ -44,10 +44,24 @@ jobs:
           ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
           APIM_EXPECTED_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
           FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
+          APIM_MIN_CAPACITY: ${{ vars.APIM_MIN_CAPACITY }}
+          APIM_DEFAULT_CAPACITY: ${{ vars.APIM_DEFAULT_CAPACITY }}
+          APIM_MAX_CAPACITY: ${{ vars.APIM_MAX_CAPACITY }}
+          APIM_NETWORKING_PROFILE: ${{ vars.APIM_NETWORKING_PROFILE }}
+          APIM_SUBNET_RESOURCE_ID: ${{ vars.APIM_SUBNET_RESOURCE_ID }}
+          APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
         run: |
           for value in "${ENTRA_TENANT_ID}" "${APIM_EXPECTED_AUDIENCE}" "${FOUNDRY_ACCOUNT_NAME}"; do
             [[ -n "${value}" && "${value}" != *example* && "${value}" != 00000000-0000-0000-0000-000000000000 ]]
           done
+          (( APIM_MIN_CAPACITY <= APIM_DEFAULT_CAPACITY && APIM_DEFAULT_CAPACITY <= APIM_MAX_CAPACITY ))
+          case "${APIM_NETWORKING_PROFILE}" in
+            public) ;;
+            private)
+              [[ -n "${APIM_SUBNET_RESOURCE_ID}" && -n "${APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID}" ]]
+              ;;
+            *) exit 1 ;;
+          esac
       - name: What-if
         env: &deployment-env
           AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
@@ -80,6 +94,9 @@ jobs:
           APIM_SCALE_IN_CPU_THRESHOLD: ${{ vars.APIM_SCALE_IN_CPU_THRESHOLD }}
           APIM_NETWORKING_PROFILE: ${{ vars.APIM_NETWORKING_PROFILE }}
           APIM_SUBNET_RESOURCE_ID: ${{ vars.APIM_SUBNET_RESOURCE_ID }}
+          APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
+          APIM_SECONDARY_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_SUBNET_RESOURCE_ID }}
+          APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
           APIM_PRIVATE_DNS_ZONE_RESOURCE_ID: ${{ vars.APIM_PRIVATE_DNS_ZONE_RESOURCE_ID }}
           ACTION_GROUP_RESOURCE_ID: ${{ vars.ACTION_GROUP_RESOURCE_ID }}
           TRAFFIC_MANAGER_NAME: ${{ vars.TRAFFIC_MANAGER_NAME }}
@@ -88,6 +105,16 @@ jobs:
           --resource-group "${AZURE_RESOURCE_GROUP}"
           --template-file infra/main.bicep
           --parameters "infra/params/${{ inputs.environment_profile }}.bicepparam"
+          --parameters entraTenantId="${ENTRA_TENANT_ID}"
+          expectedAudience="${APIM_EXPECTED_AUDIENCE}"
+          requiredAppRole="${APIM_REQUIRED_APP_ROLE}"
+          foundryBaseUrl="${FOUNDRY_BASE_URL}"
+          foundrySubscriptionId="${FOUNDRY_SUBSCRIPTION_ID}"
+          foundryResourceGroupName="${FOUNDRY_RESOURCE_GROUP}"
+          foundryAccountName="${FOUNDRY_ACCOUNT_NAME}"
+          opusDeploymentName="${ANTHROPIC_DEFAULT_OPUS_MODEL}"
+          sonnetDeploymentName="${ANTHROPIC_DEFAULT_SONNET_MODEL}"
+          haikuDeploymentName="${ANTHROPIC_DEFAULT_HAIKU_MODEL}"
 
   deploy:
     needs: whatif
@@ -112,6 +139,16 @@ jobs:
           --resource-group "${AZURE_RESOURCE_GROUP}"
           --template-file infra/main.bicep
           --parameters "infra/params/${{ inputs.environment_profile }}.bicepparam"
+          --parameters entraTenantId="${ENTRA_TENANT_ID}"
+          expectedAudience="${APIM_EXPECTED_AUDIENCE}"
+          requiredAppRole="${APIM_REQUIRED_APP_ROLE}"
+          foundryBaseUrl="${FOUNDRY_BASE_URL}"
+          foundrySubscriptionId="${FOUNDRY_SUBSCRIPTION_ID}"
+          foundryResourceGroupName="${FOUNDRY_RESOURCE_GROUP}"
+          foundryAccountName="${FOUNDRY_ACCOUNT_NAME}"
+          opusDeploymentName="${ANTHROPIC_DEFAULT_OPUS_MODEL}"
+          sonnetDeploymentName="${ANTHROPIC_DEFAULT_SONNET_MODEL}"
+          haikuDeploymentName="${ANTHROPIC_DEFAULT_HAIKU_MODEL}"
           --output json
           > "${RUNNER_TEMP}/deployment.json"
       - name: Deployment summary

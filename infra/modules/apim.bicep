@@ -22,6 +22,7 @@ param scaleInCpuThreshold int
 param zoneRedundant bool
 param networkingProfile string
 param apimSubnetResourceId string
+param apimPrivateEndpointSubnetResourceId string
 param apimPrivateDnsZoneResourceId string
 param observabilityEnabled bool
 param actionGroupResourceId string
@@ -392,6 +393,8 @@ resource failureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (observa
               name: 'BackendResponseCode'
               operator: 'Include'
               values: [
+                '401'
+                '403'
                 '429'
                 '500'
                 '502'
@@ -415,7 +418,7 @@ resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (p
   location: location
   properties: {
     subnet: {
-      id: apimSubnetResourceId
+      id: apimPrivateEndpointSubnetResourceId
     }
     privateLinkServiceConnections: [
       {
