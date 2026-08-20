@@ -40,7 +40,7 @@ Developer workstation
 
 ## Important Notes
 
-- Production profile does not require developers to call management-plane `listSecrets`.
+- Production developers require no APIM management-plane secret access.
 - APIM remains the enterprise gateway and always performs backend auth independently.
 - TLS backend certificate validation remains enabled.
 - Prompt/completion payloads are excluded from standard telemetry in the policy design.

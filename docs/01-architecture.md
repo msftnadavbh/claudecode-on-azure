@@ -37,6 +37,6 @@ Developer workstation
 ## Production Blockers Addressed
 
 - Shared APIM key as production identity boundary.
-- Reliance on management-plane `listSecrets` by end developers.
+- Reliance on APIM management-plane secret access by end developers.
 - Missing profile separation for PoC tiny limits vs production sizing.
 - Missing synthetic SSE test harness for gateway capacity testing.
