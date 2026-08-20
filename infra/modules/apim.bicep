@@ -223,7 +223,7 @@ resource appInsightsLogger 'Microsoft.ApiManagement/service/loggers@2024-05-01' 
     isBuffered: false
     credentials: {
       connectionString: appInsights!.properties.ConnectionString
-      identityClientId: 'systemAssigned'
+      identityClientId: 'SystemAssigned'
     }
   }
 }

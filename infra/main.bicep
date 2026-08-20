@@ -149,8 +149,12 @@ param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'publ
 @description('Globally unique Traffic Manager profile name.')
 param trafficManagerName string = '${apimName}-failover'
 
-var validatedFoundryBaseUrl = startsWith(foundryBaseUrl, 'https://') && endsWith(foundryBaseUrl, '/anthropic') && !contains(foundryBaseUrl, '/v1/messages') ? foundryBaseUrl : fail('Foundry base URL must use HTTPS and end with /anthropic.')
-var validatedSecondaryFoundryBaseUrl = !deploySecondary || (startsWith(secondaryFoundryBaseUrl, 'https://') && endsWith(secondaryFoundryBaseUrl, '/anthropic') && !contains(secondaryFoundryBaseUrl, '/v1/messages')) ? secondaryFoundryBaseUrl : fail('Secondary Foundry base URL must use HTTPS and end with /anthropic.')
+var foundryBaseUri = parseUri(foundryBaseUrl)
+var secondaryFoundryBaseUri = deploySecondary ? parseUri(secondaryFoundryBaseUrl) : foundryBaseUri
+var foundryBaseUrlIsValid = foundryBaseUri.scheme == 'https' && endsWith(toLower(foundryBaseUri.host), '.services.ai.azure.com') && foundryBaseUri.path == '/anthropic' && toLower(foundryBaseUrl) == 'https://${toLower(foundryBaseUri.host)}/anthropic'
+var secondaryFoundryBaseUrlIsValid = !deploySecondary || (secondaryFoundryBaseUri.scheme == 'https' && endsWith(toLower(secondaryFoundryBaseUri.host), '.services.ai.azure.com') && secondaryFoundryBaseUri.path == '/anthropic' && toLower(secondaryFoundryBaseUrl) == 'https://${toLower(secondaryFoundryBaseUri.host)}/anthropic')
+var validatedFoundryBaseUrl = foundryBaseUrlIsValid ? foundryBaseUrl : fail('Foundry base URL must use an HTTPS *.services.ai.azure.com host and exactly the /anthropic path, without additional URI components.')
+var validatedSecondaryFoundryBaseUrl = secondaryFoundryBaseUrlIsValid ? secondaryFoundryBaseUrl : fail('Secondary Foundry base URL must use an HTTPS *.services.ai.azure.com host and exactly the /anthropic path, without additional URI components.')
 var validatedApimSubnetResourceId = networkingProfile != 'private' || !empty(apimSubnetResourceId) ? apimSubnetResourceId : fail('Private networking requires the primary APIM integration subnet.')
 var validatedApimPrivateEndpointSubnetResourceId = networkingProfile != 'private' || !empty(apimPrivateEndpointSubnetResourceId) ? apimPrivateEndpointSubnetResourceId : fail('Private networking requires the primary private-endpoint subnet.')
 var validatedSecondaryApimSubnetResourceId = networkingProfile != 'private' || !deploySecondary || !empty(secondaryApimSubnetResourceId) ? secondaryApimSubnetResourceId : fail('Private networking requires the secondary APIM integration subnet.')

@@ -80,7 +80,7 @@ assert module_text.count("value: '1'") == 2
 assert module_text.count("metricName: 'CpuPercent_Gateway'") == 3
 assert "CpuPercentage" not in module_text
 assert "metricName: 'Capacity'" not in module_text
-assert "identityClientId: 'systemAssigned'" in module_text
+assert "identityClientId: 'SystemAssigned'" in module_text
 assert "monitoringMetricsPublisherRoleId" in module_text
 assert "percentage: 10" in module_text
 
@@ -96,7 +96,14 @@ assert "defaultCapacity = 1" not in prod_text
 assert "param apimSkuName = 'BasicV2'" in Path("infra/params/poc.bicepparam").read_text()
 assert "param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'public'" in main_text
 assert "validatedFoundryBaseUrl" in main_text
-assert "endsWith(foundryBaseUrl, '/anthropic')" in main_text
+assert "var foundryBaseUri = parseUri(foundryBaseUrl)" in main_text
+assert "var secondaryFoundryBaseUri = deploySecondary ? parseUri(secondaryFoundryBaseUrl) : foundryBaseUri" in main_text
+assert "endsWith(toLower(foundryBaseUri.host), '.services.ai.azure.com')" in main_text
+assert "endsWith(toLower(secondaryFoundryBaseUri.host), '.services.ai.azure.com')" in main_text
+assert "foundryBaseUri.path == '/anthropic'" in main_text
+assert "secondaryFoundryBaseUri.path == '/anthropic'" in main_text
+assert "toLower(foundryBaseUrl) == 'https://${toLower(foundryBaseUri.host)}/anthropic'" in main_text
+assert "toLower(secondaryFoundryBaseUrl) == 'https://${toLower(secondaryFoundryBaseUri.host)}/anthropic'" in main_text
 assert "validatedApimPrivateDnsZoneResourceId" in main_text
 assert main_text.count("trafficManagerProfiles/externalEndpoints") == 2
 assert "trafficManagerProfiles/azureEndpoints" not in main_text
