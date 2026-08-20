@@ -11,6 +11,7 @@ Validated against current first-party guidance as of 2026-08-20, with implementa
 ## APIM
 
 - `validate-azure-ad-token`, `rate-limit-by-key`, `quota-by-key`, and managed-identity auth patterns are supported and used.
+- The gateway requires the configured Entra app role (`ClaudeCode.User` in the PoC profile) in addition to token audience and object ID.
 - Payload logging is explicitly controlled; request/response body capture is disabled in this baseline.
 - Policy keys are derived from stable identity claims to support per-user attribution and revocation.
 
@@ -25,6 +26,14 @@ Validated against current first-party guidance as of 2026-08-20, with implementa
 - OIDC workload federation is used for Azure deployment auth.
 - Workflow permissions are set to minimum needed (`id-token: write`, `contents: read`).
 - Deployment workflow is structured for environment protection and review gates.
+
+## First-party references
+
+- [Claude Code on Microsoft Foundry](https://code.claude.com/docs/en/microsoft-foundry)
+- [Connect Claude Code to an LLM gateway](https://code.claude.com/docs/en/llm-gateway-connect)
+- [APIM `validate-azure-ad-token`](https://learn.microsoft.com/azure/api-management/validate-azure-ad-token-policy)
+- [APIM LLM token limit](https://learn.microsoft.com/azure/api-management/llm-token-limit-policy)
+- [Foundry model endpoints](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/endpoints)
 
 ## Explicit Assumptions Requiring Customer Decision
 

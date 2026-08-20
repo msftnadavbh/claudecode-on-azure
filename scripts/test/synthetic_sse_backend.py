@@ -23,20 +23,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
+        self.send_header("Connection", "close")
         self.end_headers()
 
         self.wfile.write(b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n")
         self.wfile.flush()
         for i in range(EVENT_COUNT):
             payload = {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": f"token-{i}"}}
-            line = f"event: content_block_delta\\ndata: {json.dumps(payload)}\\n\\n".encode("utf-8")
+            line = f"event: content_block_delta\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
             self.wfile.write(line)
             self.wfile.flush()
             time.sleep(EVENT_INTERVAL_MS / 1000.0)
 
         self.wfile.write(b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
         self.wfile.flush()
+        self.close_connection = True
 
     def log_message(self, fmt, *args):
         return

@@ -9,18 +9,21 @@
       </audiences>
       <required-claims>
         <claim name="oid" />
+        <claim name="roles" match="any">
+          <value>{{required-app-role}}</value>
+        </claim>
       </required-claims>
     </validate-azure-ad-token>
 
-    <set-variable name="callerObjectId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == \"oid\")?.Value ?? \"anonymous\")" />
-    <set-variable name="callerTenantId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == \"tid\")?.Value ?? \"unknown\")" />
-    <set-variable name="callerKey" value="@($\"{context.Variables[\"callerTenantId\"]}:{context.Variables[\"callerObjectId\"]}\")" />
+    <set-variable name="callerObjectId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == &quot;oid&quot;)?.Value ?? &quot;anonymous&quot;)" />
+    <set-variable name="callerTenantId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == &quot;tid&quot;)?.Value ?? &quot;unknown&quot;)" />
+    <set-variable name="callerKey" value="@((string)context.Variables[&quot;callerTenantId&quot;] + &quot;:&quot; + (string)context.Variables[&quot;callerObjectId&quot;])" />
 
-    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@(context.Variables[\"callerKey\"] as string)" />
-    <quota-by-key calls="{{per-user-hourly-quota}}" renewal-period="3600" counter-key="@(context.Variables[\"callerKey\"] as string)" />
+    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
+    <quota-by-key calls="{{per-user-hourly-quota}}" renewal-period="3600" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
 
     <!-- LLM token policy is profile-controlled and remains explicit. -->
-    <llm-token-limit counter-key="@(context.Variables[\"callerKey\"] as string)" tokens-per-minute="{{per-user-token-limit}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" />
+    <llm-token-limit counter-key="@((string)context.Variables[&quot;callerKey&quot;])" tokens-per-minute="{{per-user-token-limit}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" />
 
     <!-- Prevent caller token propagation to backend. -->
     <set-header name="Authorization" exists-action="delete" />
@@ -30,7 +33,7 @@
       <value>@(context.Variables["callerKey"] as string)</value>
     </set-header>
 
-    <set-backend-service base-url="https://{{foundry-host}}" />
+    <set-backend-service base-url="{{foundry-base-url}}" />
 
     <!-- APIM authenticates independently to Foundry. -->
     <authentication-managed-identity resource="https://cognitiveservices.azure.com" output-token-variable-name="backendToken" ignore-error="false" />
@@ -40,7 +43,7 @@
   </inbound>
 
   <backend>
-    <base />
+    <forward-request buffer-response="false" />
   </backend>
 
   <outbound>

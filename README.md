@@ -44,3 +44,9 @@ Developer workstation
 - APIM remains the enterprise gateway and always performs backend auth independently.
 - TLS backend certificate validation remains enabled.
 - Prompt/completion payloads are excluded from standard telemetry in the policy design.
+
+## Production Deployment Inputs
+
+`infra/params/prod.bicepparam` has no deployable defaults. Set the environment-specific APIM, identity, Foundry endpoint, and capacity variables listed in that file. Capacity limits must come from the approved record in [docs/03-capacity-plan.md](docs/03-capacity-plan.md); the deployment fails when they are absent or invalid.
+
+The `FOUNDRY_BASE_URL` value is the Anthropic base URL copied from Foundry, including `/anthropic`, not a hostname inferred from a resource name.

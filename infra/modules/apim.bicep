@@ -5,16 +5,13 @@ param location string
 param publisherEmail string
 param publisherName string
 param environmentProfile string
-param foundryHost string
+param foundryBaseUrl string
 param expectedAudience string
+param requiredAppRole string
 param perUserRateLimit int
 param perUserHourlyQuota int
 param perUserTokenLimit int
 
-@allowed([
-  'Developer'
-  'PremiumV2'
-])
 var skuName = environmentProfile == 'poc' ? 'Developer' : 'PremiumV2'
 var skuCapacity = 1
 
@@ -34,17 +31,19 @@ resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = {
   }
 }
 
-resource nvFoundryHost 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
-  name: '${apim.name}/foundry-host'
+resource nvFoundryBaseUrl 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
+  parent: apim
+  name: 'foundry-base-url'
   properties: {
-    displayName: 'foundry-host'
-    value: foundryHost
+    displayName: 'foundry-base-url'
+    value: foundryBaseUrl
     secret: false
   }
 }
 
 resource nvExpectedAudience 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
-  name: '${apim.name}/expected-audience'
+  parent: apim
+  name: 'expected-audience'
   properties: {
     displayName: 'expected-audience'
     value: expectedAudience
@@ -52,8 +51,19 @@ resource nvExpectedAudience 'Microsoft.ApiManagement/service/namedValues@2023-05
   }
 }
 
+resource nvRequiredAppRole 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
+  parent: apim
+  name: 'required-app-role'
+  properties: {
+    displayName: 'required-app-role'
+    value: requiredAppRole
+    secret: false
+  }
+}
+
 resource nvRateLimit 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
-  name: '${apim.name}/per-user-rate-limit'
+  parent: apim
+  name: 'per-user-rate-limit'
   properties: {
     displayName: 'per-user-rate-limit'
     value: string(perUserRateLimit)
@@ -62,7 +72,8 @@ resource nvRateLimit 'Microsoft.ApiManagement/service/namedValues@2023-05-01-pre
 }
 
 resource nvHourlyQuota 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
-  name: '${apim.name}/per-user-hourly-quota'
+  parent: apim
+  name: 'per-user-hourly-quota'
   properties: {
     displayName: 'per-user-hourly-quota'
     value: string(perUserHourlyQuota)
@@ -71,7 +82,8 @@ resource nvHourlyQuota 'Microsoft.ApiManagement/service/namedValues@2023-05-01-p
 }
 
 resource nvTokenLimit 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
-  name: '${apim.name}/per-user-token-limit'
+  parent: apim
+  name: 'per-user-token-limit'
   properties: {
     displayName: 'per-user-token-limit'
     value: string(perUserTokenLimit)
@@ -80,11 +92,47 @@ resource nvTokenLimit 'Microsoft.ApiManagement/service/namedValues@2023-05-01-pr
 }
 
 resource nvProfile 'Microsoft.ApiManagement/service/namedValues@2023-05-01-preview' = {
-  name: '${apim.name}/environment-profile'
+  parent: apim
+  name: 'environment-profile'
   properties: {
     displayName: 'environment-profile'
     value: environmentProfile
     secret: false
+  }
+}
+
+resource claudeApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
+  parent: apim
+  name: 'claude'
+  properties: {
+    displayName: 'Claude Messages API'
+    path: 'claude'
+    protocols: [
+      'https'
+    ]
+    subscriptionRequired: false
+    type: 'http'
+  }
+}
+
+resource messagesOperation 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: claudeApi
+  name: 'messages'
+  properties: {
+    displayName: 'Create message'
+    method: 'POST'
+    urlTemplate: '/v1/messages'
+    templateParameters: []
+    responses: []
+  }
+}
+
+resource messagesPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-05-01-preview' = {
+  parent: messagesOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: loadTextContent('../../apim/policies/claude-messages.xml')
   }
 }
 

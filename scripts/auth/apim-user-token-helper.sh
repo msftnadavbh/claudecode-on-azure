@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
-if ! command -v az >/dev/null 2>&1; then
-  echo "az CLI is required" >&2
-  exit 1
-fi
+for command_name in az jq; do
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    echo "${command_name} is required" >&2
+    exit 1
+  fi
+done
 
 APIM_AUDIENCE="${APIM_AUDIENCE:-}"
 if [[ -z "${APIM_AUDIENCE}" ]]; then
@@ -15,10 +18,17 @@ fi
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude-code"
 CACHE_FILE="${CACHE_DIR}/apim-token.json"
 TTL_MS="${CLAUDE_CODE_API_KEY_HELPER_TTL_MS:-300000}"
+if [[ ! "${TTL_MS}" =~ ^[0-9]+$ ]]; then
+  echo "CLAUDE_CODE_API_KEY_HELPER_TTL_MS must be a non-negative integer" >&2
+  exit 1
+fi
+
 mkdir -p "${CACHE_DIR}"
+chmod 700 "${CACHE_DIR}"
 
 now_epoch="$(date +%s)"
 if [[ -f "${CACHE_FILE}" ]]; then
+  chmod 600 "${CACHE_FILE}"
   expires_epoch="$(jq -r '.expires_epoch // 0' "${CACHE_FILE}" 2>/dev/null || echo 0)"
   token="$(jq -r '.token // empty' "${CACHE_FILE}" 2>/dev/null || true)"
   if [[ -n "${token}" ]]; then
@@ -32,13 +42,20 @@ fi
 
 raw_json="$(az account get-access-token --resource "${APIM_AUDIENCE}" --output json)"
 new_token="$(printf '%s' "${raw_json}" | jq -r '.accessToken')"
-expires_on="$(printf '%s' "${raw_json}" | jq -r '.expiresOn')"
 
 if [[ -z "${new_token}" || "${new_token}" == "null" ]]; then
   echo "Unable to acquire access token" >&2
   exit 1
 fi
 
-expires_epoch="$(date -d "${expires_on}" +%s 2>/dev/null || echo 0)"
-jq -n --arg token "${new_token}" --argjson expires_epoch "${expires_epoch}" '{token: $token, expires_epoch: $expires_epoch}' > "${CACHE_FILE}"
+expires_epoch="$(printf '%s' "${raw_json}" | jq -r '.expires_on // 0')"
+if [[ ! "${expires_epoch}" =~ ^[0-9]+$ ]]; then
+  expires_epoch=0
+fi
+temp_file="$(mktemp "${CACHE_FILE}.XXXXXX")"
+trap 'rm -f "${temp_file}"' EXIT
+jq -n --arg token "${new_token}" --argjson expires_epoch "${expires_epoch}" '{token: $token, expires_epoch: $expires_epoch}' > "${temp_file}"
+chmod 600 "${temp_file}"
+mv "${temp_file}" "${CACHE_FILE}"
+trap - EXIT
 printf '%s\n' "${new_token}"
