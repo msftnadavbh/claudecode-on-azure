@@ -52,6 +52,23 @@ expires_epoch="$(printf '%s' "${raw_json}" | jq -r '.expires_on // 0')"
 if [[ ! "${expires_epoch}" =~ ^[0-9]+$ ]]; then
   expires_epoch=0
 fi
+if (( expires_epoch == 0 )) && command -v python3 >/dev/null 2>&1; then
+  expires_on="$(printf '%s' "${raw_json}" | jq -r '.expiresOn // empty')"
+  if [[ -n "${expires_on}" ]]; then
+    expires_epoch="$(
+      python3 - "${expires_on}" <<'PY' || echo 0
+from datetime import datetime
+import sys
+
+value = sys.argv[1].replace("Z", "+00:00")
+expires = datetime.fromisoformat(value)
+if expires.tzinfo is None:
+    expires = expires.astimezone()
+print(int(expires.timestamp()))
+PY
+    )"
+  fi
+fi
 temp_file="$(mktemp "${CACHE_FILE}.XXXXXX")"
 trap 'rm -f "${temp_file}"' EXIT
 jq -n --arg token "${new_token}" --argjson expires_epoch "${expires_epoch}" '{token: $token, expires_epoch: $expires_epoch}' > "${temp_file}"
