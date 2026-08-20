@@ -8,6 +8,7 @@ import ssl
 import subprocess
 import time
 from collections import Counter
+from collections.abc import AsyncIterator
 from urllib.parse import urlsplit
 
 
@@ -16,6 +17,77 @@ def percentile(values: list[float], quantile: float) -> float | None:
         return None
     ordered = sorted(values)
     return round(ordered[max(0, math.ceil(len(ordered) * quantile) - 1)], 4)
+
+
+async def _iter_response_body_chunks(
+    reader: asyncio.StreamReader, headers: dict[str, str]
+) -> AsyncIterator[bytes]:
+    transfer_encodings = {
+        encoding.strip().lower()
+        for encoding in headers.get("transfer-encoding", "").split(",")
+    }
+    if "chunked" in transfer_encodings:
+        while True:
+            size_line = await reader.readline()
+            if not size_line:
+                raise ConnectionError("response ended before the next chunk")
+            try:
+                chunk_size = int(size_line.split(b";", 1)[0].strip(), 16)
+            except ValueError as exc:
+                raise ConnectionError("response contained an invalid chunk size") from exc
+            if chunk_size == 0:
+                while True:
+                    trailer = await reader.readline()
+                    if trailer in {b"\r\n", b"\n"}:
+                        return
+                    if not trailer:
+                        raise ConnectionError("response ended inside chunk trailers")
+
+            remaining = chunk_size
+            while remaining:
+                chunk = await reader.read(min(remaining, 65536))
+                if not chunk:
+                    raise ConnectionError("response ended inside a chunk")
+                remaining -= len(chunk)
+                yield chunk
+            try:
+                terminator = await reader.readexactly(2)
+            except asyncio.IncompleteReadError as exc:
+                raise ConnectionError("response ended after chunk data") from exc
+            if terminator != b"\r\n":
+                raise ConnectionError("response contained an invalid chunk terminator")
+
+    content_length = headers.get("content-length")
+    if content_length is not None:
+        try:
+            remaining = int(content_length)
+        except ValueError as exc:
+            raise ConnectionError("response contained an invalid content length") from exc
+        if remaining < 0:
+            raise ConnectionError("response contained an invalid content length")
+        while remaining:
+            chunk = await reader.read(min(remaining, 65536))
+            if not chunk:
+                raise ConnectionError("response ended before its declared content length")
+            remaining -= len(chunk)
+            yield chunk
+        return
+
+    while chunk := await reader.read(65536):
+        yield chunk
+
+
+async def _iter_response_body_lines(
+    reader: asyncio.StreamReader, headers: dict[str, str]
+) -> AsyncIterator[bytes]:
+    buffered = bytearray()
+    async for chunk in _iter_response_body_chunks(reader, headers):
+        buffered.extend(chunk)
+        while (newline := buffered.find(b"\n")) >= 0:
+            yield bytes(buffered[: newline + 1])
+            del buffered[: newline + 1]
+    if buffered:
+        yield bytes(buffered)
 
 
 async def run_probe(args: argparse.Namespace) -> dict:
@@ -90,13 +162,30 @@ async def run_probe(args: argparse.Namespace) -> dict:
             status_line = await asyncio.wait_for(reader.readline(), timeout=args.timeout)
             parts = status_line.decode(errors="replace").split()
             status = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
-            while await asyncio.wait_for(reader.readline(), timeout=args.timeout) not in {
-                b"\r\n",
-                b"\n",
-                b"",
-            }:
-                pass
-            first_body_line = await asyncio.wait_for(reader.readline(), timeout=args.timeout)
+            response_headers: dict[str, str] = {}
+            while True:
+                header_line = await asyncio.wait_for(
+                    reader.readline(), timeout=args.timeout
+                )
+                if header_line in {b"\r\n", b"\n", b""}:
+                    break
+                name, separator, value = header_line.partition(b":")
+                if separator:
+                    key = name.decode("latin-1").strip().lower()
+                    decoded_value = value.decode("latin-1").strip()
+                    response_headers[key] = (
+                        f"{response_headers[key]},{decoded_value}"
+                        if key in response_headers
+                        else decoded_value
+                    )
+
+            body_lines = _iter_response_body_lines(reader, response_headers)
+            try:
+                first_body_line = await asyncio.wait_for(
+                    anext(body_lines), timeout=args.timeout
+                )
+            except StopAsyncIteration:
+                first_body_line = b""
             ttfb_seconds.append(time.perf_counter() - request_start)
 
             if status == 429:
@@ -115,19 +204,28 @@ async def run_probe(args: argparse.Namespace) -> dict:
                 return
 
             saw_stop = False
-            event_count = 1 if first_body_line else 0
+            event_count = 0
+
+            def record_line(line: bytes) -> bool:
+                nonlocal event_count, saw_stop
+                if b"message_stop" in line:
+                    saw_stop = True
+                if line.startswith(b"event:"):
+                    event_count += 1
+                    return (
+                        args.disconnect_after_events > 0
+                        and event_count >= args.disconnect_after_events
+                    )
+                return False
+
+            if first_body_line and record_line(first_body_line):
+                outcomes["client_disconnect"] += 1
+                return
             async with asyncio.timeout(args.timeout):
-                while line := await reader.readline():
-                    if b"message_stop" in line:
-                        saw_stop = True
-                    if line.startswith(b"event:"):
-                        event_count += 1
-                        if (
-                            args.disconnect_after_events > 0
-                            and event_count >= args.disconnect_after_events
-                        ):
-                            outcomes["client_disconnect"] += 1
-                            return
+                async for line in body_lines:
+                    if record_line(line):
+                        outcomes["client_disconnect"] += 1
+                        return
             stream_seconds.append(time.perf_counter() - request_start)
             outcomes["ok" if saw_stop else "stream_failure"] += 1
         except (TimeoutError, asyncio.TimeoutError):
