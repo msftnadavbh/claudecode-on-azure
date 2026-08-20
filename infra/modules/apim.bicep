@@ -32,16 +32,13 @@ var availabilityZones = [
   '2'
   '3'
 ]
-var zoneCount = length(availabilityZones)
-var capacityIncrement = zoneRedundant ? zoneCount : 1
 var capacitiesAreOrdered = minimumCapacity <= defaultCapacity && defaultCapacity <= maximumCapacity
-var capacitiesMatchZones = minimumCapacity >= zoneCount && minimumCapacity % zoneCount == 0 && defaultCapacity % zoneCount == 0 && maximumCapacity % zoneCount == 0
-var capacitiesAreValid = capacitiesAreOrdered && (!zoneRedundant || capacitiesMatchZones)
+var capacitiesAreValid = capacitiesAreOrdered && (!zoneRedundant || minimumCapacity >= 2)
 var validatedCapacities = capacitiesAreValid ? {
   minimum: minimumCapacity
   default: defaultCapacity
   maximum: maximumCapacity
-} : fail('APIM capacities must be ordered and, when zone redundancy is enabled, at least three and multiples of three.')
+} : fail('APIM capacities must be ordered and production zone-redundant capacity must be at least two units.')
 var privateNetworking = networkingProfile == 'private'
 var alertActions = empty(actionGroupResourceId) ? [] : [
   {
@@ -63,7 +60,7 @@ resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
-    publicNetworkAccess: privateNetworking ? 'Disabled' : 'Enabled'
+    publicNetworkAccess: 'Enabled'
     virtualNetworkType: privateNetworking ? 'External' : 'None'
     virtualNetworkConfiguration: privateNetworking ? {
       subnetResourceId: apimSubnetResourceId
@@ -225,9 +222,21 @@ resource appInsightsLogger 'Microsoft.ApiManagement/service/loggers@2024-05-01' 
     loggerType: 'applicationInsights'
     isBuffered: false
     credentials: {
-      instrumentationKey: appInsights!.properties.InstrumentationKey
       connectionString: appInsights!.properties.ConnectionString
+      identityClientId: 'SystemAssigned'
     }
+  }
+}
+
+var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
+
+resource appInsightsPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (observabilityEnabled) {
+  name: guid(appInsights!.id, apim.id, monitoringMetricsPublisherRoleId)
+  scope: appInsights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringMetricsPublisherRoleId)
+    principalId: apim.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -240,7 +249,7 @@ resource apiDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@2024-05
     logClientIp: false
     sampling: {
       samplingType: 'fixed'
-      percentage: 100
+      percentage: 10
     }
     frontend: {
       request: {
@@ -310,38 +319,38 @@ resource autoscale 'Microsoft.Insights/autoscalesettings@2022-10-01' = if (autos
         rules: [
           {
             metricTrigger: {
-              metricName: 'CpuPercentage'
+              metricName: 'CpuPercent_Gateway'
               metricResourceUri: apim.id
               operator: 'GreaterThan'
               statistic: 'Average'
               threshold: scaleOutCpuThreshold
               timeAggregation: 'Average'
               timeGrain: 'PT1M'
-              timeWindow: 'PT10M'
+              timeWindow: 'PT30M'
             }
             scaleAction: {
-              cooldown: 'PT10M'
+              cooldown: 'PT60M'
               direction: 'Increase'
               type: 'ChangeCount'
-              value: string(capacityIncrement)
+              value: '1'
             }
           }
           {
             metricTrigger: {
-              metricName: 'CpuPercentage'
+              metricName: 'CpuPercent_Gateway'
               metricResourceUri: apim.id
               operator: 'LessThan'
               statistic: 'Average'
               threshold: scaleInCpuThreshold
               timeAggregation: 'Average'
               timeGrain: 'PT1M'
-              timeWindow: 'PT20M'
+              timeWindow: 'PT30M'
             }
             scaleAction: {
-              cooldown: 'PT20M'
+              cooldown: 'PT90M'
               direction: 'Decrease'
               type: 'ChangeCount'
-              value: string(capacityIncrement)
+              value: '1'
             }
           }
         ]
@@ -367,7 +376,7 @@ resource capacityAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (observ
       allOf: [
         {
           name: 'HighCpu'
-          metricName: 'CpuPercentage'
+          metricName: 'CpuPercent_Gateway'
           metricNamespace: 'Microsoft.ApiManagement/service'
           operator: 'GreaterThan'
           threshold: scaleOutCpuThreshold
@@ -463,3 +472,4 @@ resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneG
 output apimPrincipalId string = apim.identity.principalId
 output apimResourceId string = apim.id
 output apimGatewayUrl string = 'https://${apim.name}.azure-api.net'
+output apimGatewayHostname string = '${apim.name}.azure-api.net'

@@ -18,4 +18,4 @@ if [[ -z "${token}" || "${token}" == "null" ]]; then
   echo "Unable to acquire access token" >&2
   exit 1
 fi
-printf '%s %s\n' 'Bear''er' "${token}"
+printf '%s\n' "${token}"

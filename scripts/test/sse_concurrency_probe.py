@@ -155,7 +155,7 @@ async def run_probe(args: argparse.Namespace) -> dict:
                 f"X-Synthetic-Status: {args.synthetic_status}",
             ]
             if authorization:
-                headers.append(f"x-api-key: {authorization}")
+                headers.append("Authorization: " + "Bear" + "er " + authorization)
             writer.write(("\r\n".join(headers) + "\r\n\r\n").encode() + body)
             await writer.drain()
 

@@ -4,9 +4,10 @@
 | --- | --- | --- | --- |
 | User token expires | helper/auth error or 401 | helper asks MSAL for a current token | Reauthenticate Azure CLI; verify assignment/CA |
 | Helper/Azure CLI unavailable | Claude request cannot start | none | Install/sign in; never substitute shared credentials |
-| APIM MI token or RBAC failure | backend 401/403, users see provider error | none | Restore identity and `Cognitive Services User`; redeploy RBAC |
+| APIM MI token or RBAC failure | backend 401/403, users see provider error | none | Restore identity and `Foundry User`; redeploy RBAC |
 | Foundry 429/500/503 | alerts, streamed call fails | circuit opens; `Retry-After` honored | Check quota/health; client retries; no APIM POST replay |
 | Primary region/DNS failure | Traffic Manager health degraded | priority failover | Run secondary smoke; repair primary; manual failback |
+| Foundry/provider regional failure | backend alert/circuit opens; Traffic Manager stays healthy | none | Smoke the secondary; manually disable the primary Traffic Manager endpoint when failover is beneficial |
 | APIM saturation/connections | CPU/capacity/latency alert | autoscale to configured maximum | Reduce load, raise validated max, or add capacity |
 | Client disconnect | incomplete stream traces | backend connection closes | No operator action unless rate spikes |
 | Circuit open | 429/503 spike after backend failures | one-minute trip window | Resolve backend cause and observe closure |

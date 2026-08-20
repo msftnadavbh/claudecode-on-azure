@@ -6,18 +6,18 @@ param foundryAccountName string
 @description('APIM managed identity principal ID.')
 param principalId string
 
-// Cognitive Services User: data-plane inference without deployment management.
-var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908'
+// Foundry User: documented minimum built-in role for Foundry project data actions.
+var foundryUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 
 resource foundry 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
   name: foundryAccountName
 }
 
 resource inferenceRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(foundry.id, principalId, cognitiveServicesUserRoleId)
+  name: guid(foundry.id, principalId, foundryUserRoleId)
   scope: foundry
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', foundryUserRoleId)
     principalId: principalId
     principalType: 'ServicePrincipal'
   }

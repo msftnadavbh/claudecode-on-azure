@@ -149,12 +149,24 @@ param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'publ
 @description('Globally unique Traffic Manager profile name.')
 param trafficManagerName string = '${apimName}-failover'
 
+var foundryBaseUri = parseUri(foundryBaseUrl)
+var secondaryFoundryBaseUri = deploySecondary ? parseUri(secondaryFoundryBaseUrl) : foundryBaseUri
+var foundryBaseUrlIsValid = foundryBaseUri.scheme == 'https' && endsWith(toLower(foundryBaseUri.host), '.services.ai.azure.com') && foundryBaseUri.path == '/anthropic' && toLower(foundryBaseUrl) == 'https://${toLower(foundryBaseUri.host)}/anthropic'
+var secondaryFoundryBaseUrlIsValid = !deploySecondary || (secondaryFoundryBaseUri.scheme == 'https' && endsWith(toLower(secondaryFoundryBaseUri.host), '.services.ai.azure.com') && secondaryFoundryBaseUri.path == '/anthropic' && toLower(secondaryFoundryBaseUrl) == 'https://${toLower(secondaryFoundryBaseUri.host)}/anthropic')
+var validatedFoundryBaseUrl = foundryBaseUrlIsValid ? foundryBaseUrl : fail('Foundry base URL must use an HTTPS *.services.ai.azure.com host and exactly the /anthropic path, without additional URI components.')
+var validatedSecondaryFoundryBaseUrl = secondaryFoundryBaseUrlIsValid ? secondaryFoundryBaseUrl : fail('Secondary Foundry base URL must use an HTTPS *.services.ai.azure.com host and exactly the /anthropic path, without additional URI components.')
+var validatedApimSubnetResourceId = networkingProfile != 'private' || !empty(apimSubnetResourceId) ? apimSubnetResourceId : fail('Private networking requires the primary APIM integration subnet.')
+var validatedApimPrivateEndpointSubnetResourceId = networkingProfile != 'private' || !empty(apimPrivateEndpointSubnetResourceId) ? apimPrivateEndpointSubnetResourceId : fail('Private networking requires the primary private-endpoint subnet.')
+var validatedSecondaryApimSubnetResourceId = networkingProfile != 'private' || !deploySecondary || !empty(secondaryApimSubnetResourceId) ? secondaryApimSubnetResourceId : fail('Private networking requires the secondary APIM integration subnet.')
+var validatedSecondaryApimPrivateEndpointSubnetResourceId = networkingProfile != 'private' || !deploySecondary || !empty(secondaryApimPrivateEndpointSubnetResourceId) ? secondaryApimPrivateEndpointSubnetResourceId : fail('Private networking requires the secondary private-endpoint subnet.')
+var validatedApimPrivateDnsZoneResourceId = networkingProfile != 'private' || !empty(apimPrivateDnsZoneResourceId) ? apimPrivateDnsZoneResourceId : fail('Private networking requires the APIM private DNS zone.')
+
 module primaryApim './modules/apim.bicep' = {
   name: 'primaryApim'
   params: {
     apimName: apimName
     location: location
-    foundryBaseUrl: foundryBaseUrl
+    foundryBaseUrl: validatedFoundryBaseUrl
     environmentProfile: environmentProfile
     publisherEmail: publisherEmail
     publisherName: publisherName
@@ -173,9 +185,9 @@ module primaryApim './modules/apim.bicep' = {
     scaleInCpuThreshold: scaleInCpuThreshold
     zoneRedundant: zoneRedundant
     networkingProfile: networkingProfile
-    apimSubnetResourceId: apimSubnetResourceId
-    apimPrivateEndpointSubnetResourceId: apimPrivateEndpointSubnetResourceId
-    apimPrivateDnsZoneResourceId: apimPrivateDnsZoneResourceId
+    apimSubnetResourceId: validatedApimSubnetResourceId
+    apimPrivateEndpointSubnetResourceId: validatedApimPrivateEndpointSubnetResourceId
+    apimPrivateDnsZoneResourceId: validatedApimPrivateDnsZoneResourceId
     observabilityEnabled: observabilityEnabled
     actionGroupResourceId: actionGroupResourceId
   }
@@ -186,7 +198,7 @@ module secondaryApim './modules/apim.bicep' = if (deploySecondary) {
   params: {
     apimName: secondaryApimName
     location: secondaryLocation
-    foundryBaseUrl: secondaryFoundryBaseUrl
+    foundryBaseUrl: validatedSecondaryFoundryBaseUrl
     environmentProfile: environmentProfile
     publisherEmail: publisherEmail
     publisherName: publisherName
@@ -205,12 +217,46 @@ module secondaryApim './modules/apim.bicep' = if (deploySecondary) {
     scaleInCpuThreshold: scaleInCpuThreshold
     zoneRedundant: zoneRedundant
     networkingProfile: networkingProfile
-    apimSubnetResourceId: secondaryApimSubnetResourceId
-    apimPrivateEndpointSubnetResourceId: secondaryApimPrivateEndpointSubnetResourceId
-    apimPrivateDnsZoneResourceId: apimPrivateDnsZoneResourceId
+    apimSubnetResourceId: validatedSecondaryApimSubnetResourceId
+    apimPrivateEndpointSubnetResourceId: validatedSecondaryApimPrivateEndpointSubnetResourceId
+    apimPrivateDnsZoneResourceId: validatedApimPrivateDnsZoneResourceId
     observabilityEnabled: observabilityEnabled
     actionGroupResourceId: actionGroupResourceId
   }
+}
+
+module primaryPrivateLockdown './modules/apim-private-lockdown.bicep' = if (networkingProfile == 'private') {
+  name: 'primaryPrivateLockdown'
+  params: {
+    apimName: apimName
+    location: location
+    publisherEmail: publisherEmail
+    publisherName: publisherName
+    apimSkuName: apimSkuName
+    defaultCapacity: defaultCapacity
+    zoneRedundant: zoneRedundant
+    apimSubnetResourceId: validatedApimSubnetResourceId
+  }
+  dependsOn: [
+    primaryApim
+  ]
+}
+
+module secondaryPrivateLockdown './modules/apim-private-lockdown.bicep' = if (deploySecondary && networkingProfile == 'private') {
+  name: 'secondaryPrivateLockdown'
+  params: {
+    apimName: secondaryApimName
+    location: secondaryLocation
+    publisherEmail: publisherEmail
+    publisherName: publisherName
+    apimSkuName: apimSkuName
+    defaultCapacity: defaultCapacity
+    zoneRedundant: zoneRedundant
+    apimSubnetResourceId: validatedSecondaryApimSubnetResourceId
+  }
+  dependsOn: [
+    secondaryApim
+  ]
 }
 
 module primaryFoundryRbac './modules/foundry-rbac.bicep' = {
@@ -252,22 +298,22 @@ resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = 
   }
 }
 
-resource primaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/azureEndpoints@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
+resource primaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/externalEndpoints@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
   parent: trafficManager
   name: 'primary'
   properties: {
     endpointStatus: 'Enabled'
-    targetResourceId: primaryApim.outputs.apimResourceId
+    target: primaryApim.outputs.apimGatewayHostname
     priority: 1
   }
 }
 
-resource secondaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/azureEndpoints@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
+resource secondaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/externalEndpoints@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
   parent: trafficManager
   name: 'secondary'
   properties: {
     endpointStatus: 'Enabled'
-    targetResourceId: secondaryApim!.outputs.apimResourceId
+    target: secondaryApim!.outputs.apimGatewayHostname
     priority: 2
   }
 }

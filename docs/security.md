@@ -5,7 +5,7 @@
 - User tokens terminate at APIM and require the configured tenant, audience, app role, `tid`, and `oid`.
 - User revocation is independent through Entra assignment/sign-in controls.
 - APIM removes `Authorization`, `x-api-key`, `api-key`, APIM subscription keys, function keys, and legacy credential query parameters.
-- APIM uses its managed identity for Foundry. `Cognitive Services User` permits data-plane inference without model deployment management.
+- APIM uses its managed identity for Foundry. `Foundry User` is the current documented minimum built-in role for Foundry project data actions and does not grant model deployment management.
 - No shared production key or developer management-plane permission exists.
 
 ## Telemetry

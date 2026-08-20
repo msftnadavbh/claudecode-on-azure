@@ -16,6 +16,6 @@ Set centrally:
 
 Set `APIM_AUDIENCE` in the launch environment. Do not set `CLAUDE_CODE_USE_FOUNDRY`, `ANTHROPIC_FOUNDRY_BASE_URL`, a static Anthropic key, or a shared APIM key.
 
-The helper asks Azure CLI/MSAL for a current user token on every helper invocation and writes only `Bear` + `er <token>` to stdout. Claude Code's helper TTL limits invocations; Azure CLI/MSAL owns refresh and secure cache state. APIM validates that value in `x-api-key`, then removes it before Foundry.
+The helper asks Azure CLI/MSAL for a current user token on every helper invocation and writes only the raw token to stdout. Claude Code's helper TTL limits invocations; Azure CLI/MSAL owns refresh and secure cache state. Claude Code places helper output in both credential headers; APIM validates the standard bearer `Authorization` header and removes both caller headers before Foundry.
 
 Environment scrubbing reduces accidental disclosure to Bash, hooks, and stdio MCP children. It does not isolate processes from the same operating-system user; use managed endpoints and OS controls as the stronger boundary.
