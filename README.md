@@ -44,6 +44,8 @@ Production deliberately has no deployable defaults for tenant, Foundry, models, 
 
 ## Validation and load test
 
+Validation requires Bash, ShellCheck, Python 3.11+, and Bicep CLI (or Azure CLI with Bicep).
+
 ```bash
 scripts/test/validate.sh
 python3 scripts/test/synthetic_sse_backend.py

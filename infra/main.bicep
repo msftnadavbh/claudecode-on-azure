@@ -257,7 +257,6 @@ resource primaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/azureE
   name: 'primary'
   properties: {
     endpointStatus: 'Enabled'
-    endpointMonitorStatus: 'CheckingEndpoint'
     targetResourceId: primaryApim.outputs.apimResourceId
     priority: 1
   }
@@ -268,7 +267,6 @@ resource secondaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/azur
   name: 'secondary'
   properties: {
     endpointStatus: 'Enabled'
-    endpointMonitorStatus: 'CheckingEndpoint'
     targetResourceId: secondaryApim!.outputs.apimResourceId
     priority: 2
   }
