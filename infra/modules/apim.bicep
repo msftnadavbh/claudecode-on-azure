@@ -10,49 +10,25 @@ param entraTenantId string
 param expectedAudience string
 param requiredAppRole string
 param perUserRateLimit int
-param perUserHourlyQuota int
 param perUserTokenLimit int
 param apimSkuName string
 param minimumCapacity int
 param defaultCapacity int
 param maximumCapacity int
-param autoscaleEnabled bool
-param scaleOutCpuThreshold int
-param scaleInCpuThreshold int
 param zoneRedundant bool
 param networkingProfile string
 param apimSubnetResourceId string
-param apimPrivateEndpointSubnetResourceId string
-param apimPrivateDnsZoneResourceId string
-param observabilityEnabled bool
-param actionGroupResourceId string
 
-var availabilityZones = [
-  '1'
-  '2'
-  '3'
-]
-var capacitiesAreOrdered = minimumCapacity <= defaultCapacity && defaultCapacity <= maximumCapacity
-var capacitiesAreValid = capacitiesAreOrdered && (!zoneRedundant || minimumCapacity >= 2)
-var validatedCapacities = capacitiesAreValid ? {
-  minimum: minimumCapacity
-  default: defaultCapacity
-  maximum: maximumCapacity
-} : fail('APIM capacities must be ordered and production zone-redundant capacity must be at least two units.')
+var capacitiesAreValid = minimumCapacity <= defaultCapacity && defaultCapacity <= maximumCapacity && (!zoneRedundant || minimumCapacity >= 2)
+var validatedCapacity = capacitiesAreValid ? defaultCapacity : fail('APIM capacities must be ordered, and zone-redundant capacity must be at least two units.')
 var privateNetworking = networkingProfile == 'private'
-var alertActions = empty(actionGroupResourceId) ? [] : [
-  {
-    actionGroupId: actionGroupResourceId
-  }
-]
 
-resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
+resource apim 'Microsoft.ApiManagement/service@2025-03-01-preview' = {
   name: apimName
   location: location
-  zones: zoneRedundant ? availabilityZones : null
   sku: {
     name: apimSkuName
-    capacity: validatedCapacities.default
+    capacity: validatedCapacity
   }
   identity: {
     type: 'SystemAssigned'
@@ -60,11 +36,12 @@ resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
-    publicNetworkAccess: 'Enabled'
-    virtualNetworkType: privateNetworking ? 'External' : 'None'
+    publicNetworkAccess: privateNetworking ? 'Disabled' : 'Enabled'
+    virtualNetworkType: privateNetworking ? 'Internal' : 'None'
     virtualNetworkConfiguration: privateNetworking ? {
       subnetResourceId: apimSubnetResourceId
     } : null
+    zoneRedundant: zoneRedundant
   }
 }
 
@@ -105,7 +82,6 @@ var namedValues = {
   'expected-audience': expectedAudience
   'required-app-role': requiredAppRole
   'per-user-rate-limit': string(perUserRateLimit)
-  'per-user-hourly-quota': string(perUserHourlyQuota)
   'per-user-token-limit': string(perUserTokenLimit)
   'environment-profile': environmentProfile
 }
@@ -135,18 +111,29 @@ resource claudeApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
   }
 }
 
+resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = {
+  parent: claudeApi
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: loadTextContent('../../apim/policies/claude-base.xml')
+  }
+}
+
 var operations = [
   {
     name: 'messages'
     displayName: 'Create message'
     method: 'POST'
     urlTemplate: '/v1/messages'
+    policy: loadTextContent('../../apim/policies/claude-messages.xml')
   }
   {
     name: 'count-tokens'
     displayName: 'Count message tokens'
     method: 'POST'
     urlTemplate: '/v1/messages/count_tokens'
+    policy: loadTextContent('../../apim/policies/claude-count-tokens.xml')
   }
 ]
 
@@ -167,7 +154,7 @@ resource operationPolicy 'Microsoft.ApiManagement/service/apis/operations/polici
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: loadTextContent('../../apim/policies/claude-messages.xml')
+    value: item.policy
   }
 }]
 
@@ -189,283 +176,6 @@ resource healthPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@
   properties: {
     format: 'rawxml'
     value: '<policies><inbound><return-response><set-status code="200" reason="OK" /><set-body>healthy</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
-  }
-}
-
-resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (observabilityEnabled) {
-  name: '${apimName}-logs'
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-  }
-}
-
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (observabilityEnabled) {
-  name: '${apimName}-insights'
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: workspace.id
-    DisableIpMasking: false
-    IngestionMode: 'LogAnalytics'
-  }
-}
-
-resource appInsightsLogger 'Microsoft.ApiManagement/service/loggers@2024-05-01' = if (observabilityEnabled) {
-  parent: apim
-  name: 'application-insights'
-  properties: {
-    loggerType: 'applicationInsights'
-    isBuffered: false
-    credentials: {
-      connectionString: appInsights!.properties.ConnectionString
-      identityClientId: 'SystemAssigned'
-    }
-  }
-}
-
-var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
-
-resource appInsightsPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (observabilityEnabled) {
-  name: guid(appInsights!.id, apim.id, monitoringMetricsPublisherRoleId)
-  scope: appInsights
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringMetricsPublisherRoleId)
-    principalId: apim.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource apiDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@2024-05-01' = if (observabilityEnabled) {
-  parent: claudeApi
-  name: 'applicationinsights'
-  properties: {
-    loggerId: appInsightsLogger.id
-    alwaysLog: 'allErrors'
-    logClientIp: false
-    sampling: {
-      samplingType: 'fixed'
-      percentage: 10
-    }
-    frontend: {
-      request: {
-        body: {
-          bytes: 0
-        }
-        headers: []
-      }
-      response: {
-        body: {
-          bytes: 0
-        }
-        headers: []
-      }
-    }
-    backend: {
-      request: {
-        body: {
-          bytes: 0
-        }
-        headers: []
-      }
-      response: {
-        body: {
-          bytes: 0
-        }
-        headers: []
-      }
-    }
-  }
-}
-
-resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (observabilityEnabled) {
-  name: 'send-to-log-analytics'
-  scope: apim
-  properties: {
-    workspaceId: workspace.id
-    logs: [
-      {
-        categoryGroup: 'audit'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-      }
-    ]
-  }
-}
-
-resource autoscale 'Microsoft.Insights/autoscalesettings@2022-10-01' = if (autoscaleEnabled) {
-  name: '${apimName}-autoscale'
-  location: location
-  properties: {
-    enabled: true
-    targetResourceUri: apim.id
-    profiles: [
-      {
-        name: 'cpu-capacity'
-        capacity: {
-          minimum: string(validatedCapacities.minimum)
-          default: string(validatedCapacities.default)
-          maximum: string(validatedCapacities.maximum)
-        }
-        rules: [
-          {
-            metricTrigger: {
-              metricName: 'CpuPercent_Gateway'
-              metricResourceUri: apim.id
-              operator: 'GreaterThan'
-              statistic: 'Average'
-              threshold: scaleOutCpuThreshold
-              timeAggregation: 'Average'
-              timeGrain: 'PT1M'
-              timeWindow: 'PT30M'
-            }
-            scaleAction: {
-              cooldown: 'PT60M'
-              direction: 'Increase'
-              type: 'ChangeCount'
-              value: '1'
-            }
-          }
-          {
-            metricTrigger: {
-              metricName: 'CpuPercent_Gateway'
-              metricResourceUri: apim.id
-              operator: 'LessThan'
-              statistic: 'Average'
-              threshold: scaleInCpuThreshold
-              timeAggregation: 'Average'
-              timeGrain: 'PT1M'
-              timeWindow: 'PT30M'
-            }
-            scaleAction: {
-              cooldown: 'PT90M'
-              direction: 'Decrease'
-              type: 'ChangeCount'
-              value: '1'
-            }
-          }
-        ]
-      }
-    ]
-  }
-}
-
-resource capacityAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (observabilityEnabled) {
-  name: '${apimName}-high-capacity'
-  location: 'global'
-  properties: {
-    description: 'APIM gateway CPU capacity is sustained above the scale-out threshold.'
-    severity: 2
-    enabled: true
-    scopes: [
-      apim.id
-    ]
-    evaluationFrequency: 'PT5M'
-    windowSize: 'PT15M'
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          name: 'HighCpu'
-          metricName: 'CpuPercent_Gateway'
-          metricNamespace: 'Microsoft.ApiManagement/service'
-          operator: 'GreaterThan'
-          threshold: scaleOutCpuThreshold
-          timeAggregation: 'Average'
-          criterionType: 'StaticThresholdCriterion'
-        }
-      ]
-    }
-    actions: alertActions
-  }
-}
-
-resource failureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (observabilityEnabled) {
-  name: '${apimName}-gateway-errors'
-  location: 'global'
-  properties: {
-    description: 'APIM reports sustained failed gateway requests.'
-    severity: 1
-    enabled: true
-    scopes: [
-      apim.id
-    ]
-    evaluationFrequency: 'PT5M'
-    windowSize: 'PT15M'
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          name: 'FailedRequests'
-          metricName: 'Requests'
-          metricNamespace: 'Microsoft.ApiManagement/service'
-          dimensions: [
-            {
-              name: 'BackendResponseCode'
-              operator: 'Include'
-              values: [
-                '401'
-                '403'
-                '429'
-                '500'
-                '502'
-                '503'
-              ]
-            }
-          ]
-          operator: 'GreaterThan'
-          threshold: 5
-          timeAggregation: 'Total'
-          criterionType: 'StaticThresholdCriterion'
-        }
-      ]
-    }
-    actions: alertActions
-  }
-}
-
-resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (privateNetworking) {
-  name: '${apimName}-gateway-pe'
-  location: location
-  properties: {
-    subnet: {
-      id: apimPrivateEndpointSubnetResourceId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'gateway'
-        properties: {
-          privateLinkServiceId: apim.id
-          groupIds: [
-            'Gateway'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (privateNetworking && !empty(apimPrivateDnsZoneResourceId)) {
-  parent: privateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'apim'
-        properties: {
-          privateDnsZoneId: apimPrivateDnsZoneResourceId
-        }
-      }
-    ]
   }
 }
 

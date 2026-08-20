@@ -75,7 +75,7 @@ Production values are intentionally absent from `prod.bicepparam`. Before settin
 | APIM units at acceptable capacity/error rate | measured | measured | measured | Synthetic SSE test |
 | Foundry quota pool and headroom | verified | verified | verified | Foundry quota page/export |
 
-Approve `PER_USER_RATE_LIMIT`, `PER_USER_HOURLY_QUOTA`, and `PER_USER_TOKEN_LIMIT` only after the aggregate values fit both measured APIM capacity and the applicable Foundry quota with agreed operational headroom. Recalculate after model/version, deployment type, policy, cache behavior, or worker-concurrency changes.
+Approve `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, and fixed `APIM_DEFAULT_CAPACITY` only after aggregate demand fits measured APIM capacity and the applicable Foundry quota with agreed operational headroom. Start fixed; enable optional autoscale only when sustained APIM utilization justifies its slow control loop. Recalculate after model/version, deployment type, policy, cache behavior, or worker-concurrency changes.
 
 ## Two Test Classes
 
