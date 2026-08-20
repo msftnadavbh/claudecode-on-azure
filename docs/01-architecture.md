@@ -7,7 +7,7 @@ managed workstation -> enterprise DNS -> primary APIM -> primary Foundry Claude
                                       \-> secondary APIM -> secondary Foundry Claude
 ```
 
-Traffic Manager uses priority routing and `/claude/health`. Each Premium v2 service has the same API revision, named values, policy, diagnostics, backend circuit breaker, capacity rules, and an independent system-assigned identity. Each identity receives only `Cognitive Services User` on its existing Foundry account.
+For public profiles, Traffic Manager uses priority routing and `/claude/health`; private profiles use customer-managed corporate DNS failover. Each Premium v2 service has the same API revision, named values, policy, diagnostics, backend circuit breaker, capacity rules, and an independent system-assigned identity. Each identity receives only `Cognitive Services User` on its existing Foundry account.
 
 ## Request path
 

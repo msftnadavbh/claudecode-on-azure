@@ -27,6 +27,21 @@ param apimPrivateDnsZoneResourceId string
 param observabilityEnabled bool
 param actionGroupResourceId string
 
+var availabilityZones = [
+  '1'
+  '2'
+  '3'
+]
+var zoneCount = length(availabilityZones)
+var capacityIncrement = zoneRedundant ? zoneCount : 1
+var capacitiesAreOrdered = minimumCapacity <= defaultCapacity && defaultCapacity <= maximumCapacity
+var capacitiesMatchZones = minimumCapacity >= zoneCount && minimumCapacity % zoneCount == 0 && defaultCapacity % zoneCount == 0 && maximumCapacity % zoneCount == 0
+var capacitiesAreValid = capacitiesAreOrdered && (!zoneRedundant || capacitiesMatchZones)
+var validatedCapacities = capacitiesAreValid ? {
+  minimum: minimumCapacity
+  default: defaultCapacity
+  maximum: maximumCapacity
+} : fail('APIM capacities must be ordered and, when zone redundancy is enabled, at least three and multiples of three.')
 var privateNetworking = networkingProfile == 'private'
 var alertActions = empty(actionGroupResourceId) ? [] : [
   {
@@ -37,14 +52,10 @@ var alertActions = empty(actionGroupResourceId) ? [] : [
 resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
   name: apimName
   location: location
-  zones: zoneRedundant ? [
-    '1'
-    '2'
-    '3'
-  ] : null
+  zones: zoneRedundant ? availabilityZones : null
   sku: {
     name: apimSkuName
-    capacity: defaultCapacity
+    capacity: validatedCapacities.default
   }
   identity: {
     type: 'SystemAssigned'
@@ -292,9 +303,9 @@ resource autoscale 'Microsoft.Insights/autoscalesettings@2022-10-01' = if (autos
       {
         name: 'cpu-capacity'
         capacity: {
-          minimum: string(minimumCapacity)
-          default: string(defaultCapacity)
-          maximum: string(maximumCapacity)
+          minimum: string(validatedCapacities.minimum)
+          default: string(validatedCapacities.default)
+          maximum: string(validatedCapacities.maximum)
         }
         rules: [
           {
@@ -312,7 +323,7 @@ resource autoscale 'Microsoft.Insights/autoscalesettings@2022-10-01' = if (autos
               cooldown: 'PT10M'
               direction: 'Increase'
               type: 'ChangeCount'
-              value: '1'
+              value: string(capacityIncrement)
             }
           }
           {
@@ -330,7 +341,7 @@ resource autoscale 'Microsoft.Insights/autoscalesettings@2022-10-01' = if (autos
               cooldown: 'PT20M'
               direction: 'Decrease'
               type: 'ChangeCount'
-              value: '1'
+              value: string(capacityIncrement)
             }
           }
         ]

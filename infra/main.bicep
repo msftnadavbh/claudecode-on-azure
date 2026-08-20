@@ -143,8 +143,8 @@ param observabilityEnabled bool = true
 @description('Resource ID of an existing Action Group. Empty creates alerts without actions.')
 param actionGroupResourceId string = ''
 
-@description('Deploy Traffic Manager priority routing when secondary APIM is enabled.')
-param trafficManagerEnabled bool = deploySecondary
+@description('Deploy Traffic Manager priority routing for public secondary APIM.')
+param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'public'
 
 @description('Globally unique Traffic Manager profile name.')
 param trafficManagerName string = '${apimName}-failover'

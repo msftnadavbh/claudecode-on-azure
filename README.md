@@ -11,7 +11,7 @@ APIM validates each developer's Entra identity, applies per-user fairness contro
 - Generic Claude Code gateway mode with a refreshable Entra `apiKeyHelper`, no extra bearer-token cache, subprocess credential scrubbing, and independent Opus/Sonnet/Haiku deployment aliases.
 - `/v1/messages` and `/v1/messages/count_tokens`, native headers/query passthrough, unbuffered SSE, credential stripping, and APIM backend circuit breaking without automatic POST retries.
 - Basic v2 PoC and configurable Premium v2 production capacity/autoscale.
-- Two independent regional APIM services, priority Traffic Manager failover, availability zones, and public/private networking profiles.
+- Two independent regional APIM services, public-profile Traffic Manager failover, availability zones, and public/private networking profiles.
 - Least-privilege `Cognitive Services User` assignment on existing Foundry accounts; this repository does not manage Foundry accounts or deployments.
 - Log Analytics, workspace-based Application Insights, zero-body APIM diagnostics, low-cardinality metrics/alerts, and safe identity traces.
 - OIDC validation/what-if/deployment/smoke workflows and asynchronous 500–2,500 stream tooling.

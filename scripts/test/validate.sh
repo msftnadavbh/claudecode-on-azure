@@ -72,6 +72,9 @@ for route in ("/v1/messages", "/v1/messages/count_tokens"):
 assert "subscriptionRequired: false" in module_text
 assert "circuitBreaker:" in module_text and "acceptRetryAfter: true" in module_text
 assert "body:" in module_text and module_text.count("bytes: 0") >= 4
+assert "var validatedCapacities = capacitiesAreValid" in module_text
+assert "multiples of three." in module_text
+assert module_text.count("value: string(capacityIncrement)") == 2
 
 main_text = Path("infra/main.bicep").read_text()
 prod_text = Path("infra/params/prod.bicepparam").read_text()
@@ -83,10 +86,16 @@ for name in (
     assert f"param {name}" in main_text or f"param {name}" in prod_text
 assert "defaultCapacity = 1" not in prod_text
 assert "param apimSkuName = 'BasicV2'" in Path("infra/params/poc.bicepparam").read_text()
+assert "param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'public'" in main_text
 
 workflow = Path(".github/workflows/deploy.yml").read_text()
 assert "az deployment group create" in workflow
 assert "scripts/test/smoke.sh" in workflow
+for name in (
+    "APIM_SECONDARY_SUBNET_RESOURCE_ID",
+    "APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID",
+):
+    assert workflow.count(name) >= 3
 PY
 
 build_dir="$(mktemp -d)"
@@ -127,9 +136,9 @@ ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-pinned \
 PER_USER_RATE_LIMIT=100 \
 PER_USER_HOURLY_QUOTA=500 \
 PER_USER_TOKEN_LIMIT=50000 \
-APIM_MIN_CAPACITY=2 \
-APIM_DEFAULT_CAPACITY=2 \
-APIM_MAX_CAPACITY=10 \
+APIM_MIN_CAPACITY=3 \
+APIM_DEFAULT_CAPACITY=3 \
+APIM_MAX_CAPACITY=12 \
 APIM_SCALE_OUT_CPU_THRESHOLD=70 \
 APIM_SCALE_IN_CPU_THRESHOLD=30 \
 APIM_NETWORKING_PROFILE=public \
