@@ -1,0 +1,56 @@
+<policies>
+  <inbound>
+    <base />
+
+    <!-- Validate caller token at APIM boundary. -->
+    <validate-azure-ad-token tenant-id="{{entra-tenant-id}}" failed-validation-httpcode="401" failed-validation-error-message="Invalid or missing Entra token.">
+      <audiences>
+        <audience>{{expected-audience}}</audience>
+      </audiences>
+      <required-claims>
+        <claim name="oid" />
+        <claim name="roles" match="any">
+          <value>{{required-app-role}}</value>
+        </claim>
+      </required-claims>
+    </validate-azure-ad-token>
+
+    <set-variable name="callerObjectId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == &quot;oid&quot;)?.Value ?? &quot;anonymous&quot;)" />
+    <set-variable name="callerTenantId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == &quot;tid&quot;)?.Value ?? &quot;unknown&quot;)" />
+    <set-variable name="callerKey" value="@((string)context.Variables[&quot;callerTenantId&quot;] + &quot;:&quot; + (string)context.Variables[&quot;callerObjectId&quot;])" />
+
+    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
+    <quota-by-key calls="{{per-user-hourly-quota}}" renewal-period="3600" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
+
+    <!-- LLM token policy is profile-controlled and remains explicit. -->
+    <llm-token-limit counter-key="@((string)context.Variables[&quot;callerKey&quot;])" tokens-per-minute="{{per-user-token-limit}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" />
+
+    <!-- Prevent caller token propagation to backend. -->
+    <set-header name="Authorization" exists-action="delete" />
+
+    <!-- Attribute telemetry with stable user key, without body capture. -->
+    <set-header name="x-apim-caller-key" exists-action="override">
+      <value>@(context.Variables["callerKey"] as string)</value>
+    </set-header>
+
+    <set-backend-service base-url="{{foundry-base-url}}" />
+
+    <!-- APIM authenticates independently to Foundry. -->
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" output-token-variable-name="backendToken" ignore-error="false" />
+    <set-header name="Authorization" exists-action="override">
+      <value>@($"Bearer {context.Variables[\"backendToken\"]}")</value>
+    </set-header>
+  </inbound>
+
+  <backend>
+    <forward-request buffer-response="false" />
+  </backend>
+
+  <outbound>
+    <base />
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>
