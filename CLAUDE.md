@@ -1,25 +1,21 @@
 # Claude Code Runtime Guidance
 
-This repository assumes Claude Code is configured in Foundry mode and routed through APIM.
+This repository uses generic Anthropic gateway mode because APIM, not the client, owns Foundry authentication.
 
-## Production Runtime
+## Managed production settings
 
-Set:
+Set centrally:
 
-- `CLAUDE_CODE_USE_FOUNDRY=1`
-- `ANTHROPIC_FOUNDRY_BASE_URL=https://<apim-host>/claude`
+- `ANTHROPIC_BASE_URL=https://<enterprise-dns>/claude`
 - `CLAUDE_CODE_API_KEY_HELPER_TTL_MS=300000`
+- `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`
+- `ANTHROPIC_DEFAULT_OPUS_MODEL=<pinned-foundry-deployment>`
+- `ANTHROPIC_DEFAULT_SONNET_MODEL=<pinned-foundry-deployment>`
+- `ANTHROPIC_DEFAULT_HAIKU_MODEL=<pinned-foundry-deployment>`
 - `apiKeyHelper=<absolute-path>/scripts/auth/apim-user-token-helper.sh`
 
-Do not set a static shared APIM key for production users.
+Set `APIM_AUDIENCE` in the launch environment. Do not set `CLAUDE_CODE_USE_FOUNDRY`, `ANTHROPIC_FOUNDRY_BASE_URL`, a static Anthropic key, or a shared APIM key.
 
-## PoC Runtime
+The helper asks Azure CLI/MSAL for a current user token on every helper invocation and writes only `Bear` + `er <token>` to stdout. Claude Code's helper TTL limits invocations; Azure CLI/MSAL owns refresh and secure cache state. APIM validates that value in `x-api-key`, then removes it before Foundry.
 
-PoC profile keeps intentionally tiny limits to demonstrate policy behavior. Use only in non-production environments.
-
-## Security
-
-- Caller token is validated at APIM.
-- Caller token is not forwarded to Foundry.
-- APIM managed identity obtains backend token for Foundry.
-- Developers require no APIM management-plane permissions.
+Environment scrubbing reduces accidental disclosure to Bash, hooks, and stdio MCP children. It does not isolate processes from the same operating-system user; use managed endpoints and OS controls as the stronger boundary.

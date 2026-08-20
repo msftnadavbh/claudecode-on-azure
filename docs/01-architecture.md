@@ -1,42 +1,25 @@
-# Architecture and Security Boundaries
+# Architecture
 
-## Current State in This Repository
+## Deployed topology
 
-The repository baseline was effectively empty at initialization (`README.md` only). There was no local PoC implementation to refactor in place, so this change set establishes a production-aligned baseline structure and implementation artifacts directly.
+```text
+managed workstation -> enterprise DNS -> primary APIM -> primary Foundry Claude
+                                      \-> secondary APIM -> secondary Foundry Claude
+```
 
-## Target Architecture
+For public profiles, Traffic Manager uses priority routing and `/claude/health`; private profiles use customer-managed corporate DNS failover. Each Premium v2 service has the same API revision, named values, policy, diagnostics, backend circuit breaker, capacity rules, and an independent system-assigned identity. Each identity receives only `Cognitive Services User` on its existing Foundry account.
 
-Developer workstation
--> Claude Code
--> APIM (`/claude/v1/messages`)
--> APIM validates Entra JWT and derives stable user key
--> APIM applies authz/rate/quota/token policy
--> APIM strips caller `Authorization`
--> APIM authenticates with managed identity to Foundry
--> Microsoft Foundry Claude deployment
+## Request path
 
-## Security Boundaries
+1. Claude Code obtains a user token for the APIM application audience through `apiKeyHelper`.
+2. APIM validates tenant, audience, `oid`, `tid`, and app role from `x-api-key`.
+3. APIM keys request, hourly, and token controls by `tid:oid`.
+4. APIM removes caller/provider credentials and keeps identity only in bounded gateway traces.
+5. APIM selects the configured backend entity. Its circuit opens after repeated 429/5xx responses and honors `Retry-After`; APIM does not replay inference POSTs.
+6. APIM obtains its own Foundry token and streams the native response without buffering.
 
-- Boundary 1: Developer identity (Entra token) terminates at APIM.
-- Boundary 2: APIM-to-Foundry uses APIM managed identity only.
-- Boundary 3: No shared bearer secret for 500+ developer population.
-- Boundary 4: Telemetry excludes request/response body by default.
+Foundry accounts, model deployments, versions, deployment types, capacity, and networking are external customer resources. The template only creates APIM-owned resources and RBAC assignments.
 
-## Scale Risks
+## Availability semantics
 
-- Long-lived SSE streams drive concurrent connection pressure independent of simple request-rate calculations.
-- Subagents/parallel workers multiply active streams per human user.
-- Model quotas and APIM gateway capacity can bottleneck independently.
-
-## Availability Risks
-
-- Regional dependency when only a single Foundry deployment exists.
-- APIM policy failures causing hard reject spikes during token-claim format drift.
-- Retry storms if transient backend failure handling is misconfigured.
-
-## Production Blockers Addressed
-
-- Shared APIM key as production identity boundary.
-- Reliance on management-plane `listSecrets` by end developers.
-- Missing profile separation for PoC tiny limits vs production sizing.
-- Missing synthetic SSE test harness for gateway capacity testing.
+The default is active/passive. In-flight streams fail during regional loss and must be retried by Claude Code. Per-user APIM counters are service-local, so failover can temporarily reset effective counters. Foundry quota scope may span resources/regions and is verified separately.

@@ -1,52 +1,70 @@
-# Claude Code + APIM + Microsoft Foundry (Production Reference)
+# Claude Code + APIM + Microsoft Foundry
 
-This repository is a production-aligned reference architecture for running Claude Code through Azure API Management (APIM) into Microsoft Foundry while preserving the native Anthropic Messages API contract.
+Deployable reference for 500+ developers using the native Anthropic Messages API:
 
-## Core Architecture
+`Claude Code -> Azure API Management -> Microsoft Foundry -> customer-managed Claude deployments`
 
-Developer workstation
--> Claude Code
--> Azure API Management (enterprise gateway)
--> APIM authentication, authorization, quotas, telemetry, governance
--> Microsoft Foundry
--> Claude model deployments
+APIM validates each developer's Entra identity, applies per-user fairness controls, removes caller credentials, and authenticates to Foundry with its managed identity. Production uses no shared gateway key and gives developers no APIM management-plane access.
 
-## What This Repository Delivers
+## Implemented
 
-- Per-user runtime identity using Microsoft Entra tokens (no shared APIM subscription secret in production profile).
-- APIM policy model that validates caller token, derives stable caller identity, applies per-user controls, removes caller auth before backend call, and authenticates to Foundry with APIM-managed identity.
-- Separate `poc` and `prod` profiles with intentionally tiny PoC limits preserved and production parameters externalized.
-- IaC structure for APIM-centric deployment and policy configuration.
-- Synthetic SSE backend and gateway-load tools to test APIM stream concurrency independent from model quota.
-- GitHub Actions OIDC deployment workflow skeleton with minimal permissions.
+- Generic Claude Code gateway mode with a refreshable Entra `apiKeyHelper`, no extra bearer-token cache, subprocess credential scrubbing, and independent Opus/Sonnet/Haiku deployment aliases.
+- `/v1/messages` and `/v1/messages/count_tokens`, native headers/query passthrough, unbuffered SSE, credential stripping, and APIM backend circuit breaking without automatic POST retries.
+- Basic v2 PoC and configurable Premium v2 production capacity/autoscale.
+- Two independent regional APIM services, public-profile Traffic Manager failover, availability zones, and public/private networking profiles.
+- Least-privilege `Cognitive Services User` assignment on existing Foundry accounts; this repository does not manage Foundry accounts or deployments.
+- Log Analytics, workspace-based Application Insights, zero-body APIM diagnostics, low-cardinality metrics/alerts, and safe identity traces.
+- OIDC validation/what-if/deployment/smoke workflows and asynchronous 500–2,500 stream tooling.
 
-## Repository Layout
+## PoC quick start
 
-- `infra/`: Bicep entrypoint, modules, and profile parameter files.
-- `apim/policies/`: APIM policy definitions for user auth, quota/rate limits, and backend auth handling.
-- `scripts/auth/`: Token helper and Claude Code env bootstrap scripts.
-- `scripts/test/`: Synthetic SSE backend and concurrency/load probe scripts.
-- `docs/`: Architecture, constraints, migration plan, capacity model, and operations guidance.
-- `.github/workflows/`: OIDC deployment workflow template.
+`infra/params/poc.bicepparam` deliberately uses fake identity/resource values and tiny `20 / 40 / 4000` limits. Override the fake values at deployment; do not reuse this profile for production.
 
-## Quick Start
+```bash
+scripts/test/validate.sh
+az deployment group create --resource-group <rg> --template-file infra/main.bicep \
+  --parameters infra/params/poc.bicepparam \
+  --parameters entraTenantId=<tenant-guid> expectedAudience=api://<gateway-app-id> \
+  foundryResourceGroupName=<foundry-rg> foundryAccountName=<foundry-account> \
+  foundryBaseUrl=https://<resource>.services.ai.azure.com/anthropic \
+  opusDeploymentName=<pinned-deployment> sonnetDeploymentName=<pinned-deployment> \
+  haikuDeploymentName=<pinned-deployment>
+```
 
-1. Read [docs/01-architecture.md](docs/01-architecture.md) and [docs/02-platform-constraints.md](docs/02-platform-constraints.md).
-2. Set profile environment variables using `scripts/auth/print-claude-env.sh`.
-3. Configure Claude Code with `apiKeyHelper` pointing to `scripts/auth/apim-user-token-helper.sh`.
-4. Deploy infra using `infra/main.bicep` and either `infra/params/poc.bicepparam` or `infra/params/prod.bicepparam`.
-5. Validate policy and scripting via `scripts/test/validate.sh`.
-6. Run synthetic SSE capacity tests before any end-to-end Foundry throughput tests.
+## Production reference deployment
 
-## Important Notes
+1. Create the caller-facing Entra application, app role, and GitHub OIDC federated identities.
+2. Create/pin customer-owned Claude deployments and approve quotas.
+3. Configure the GitHub `prod-primary` environment variables used by `infra/params/prod.bicepparam`; configure required reviewers.
+4. Choose `public` or `private`. Private mode requires separate outbound-integration and private-endpoint subnets per region plus the APIM private DNS zone.
+5. Record measured capacity values, dispatch `deploy`, review what-if, approve, deploy, and inspect the smoke result.
+6. Distribute managed Claude Code settings from [docs/client-authentication.md](docs/client-authentication.md).
 
-- Production profile does not require developers to call management-plane `listSecrets`.
-- APIM remains the enterprise gateway and always performs backend auth independently.
-- TLS backend certificate validation remains enabled.
-- Prompt/completion payloads are excluded from standard telemetry in the policy design.
+Production deliberately has no deployable defaults for tenant, Foundry, models, regions, capacity, networking, or alerts. See [docs/production-readiness.md](docs/production-readiness.md).
 
-## Production Deployment Inputs
+## Validation and load test
 
-`infra/params/prod.bicepparam` has no deployable defaults. Set the environment-specific APIM, identity, Foundry endpoint, and capacity variables listed in that file. Capacity limits must come from the approved record in [docs/03-capacity-plan.md](docs/03-capacity-plan.md); the deployment fails when they are absent or invalid.
+Validation requires Bash, ShellCheck, Python 3.11+, and Bicep CLI (or Azure CLI with Bicep).
 
-The `FOUNDRY_BASE_URL` value is the Anthropic base URL copied from Foundry, including `/anthropic`, not a hostname inferred from a resource name.
+```bash
+scripts/test/validate.sh
+python3 scripts/test/synthetic_sse_backend.py
+python3 scripts/test/sse_concurrency_probe.py \
+  --url http://127.0.0.1:8088/v1/messages \
+  --concurrency 500 --stream-duration 60
+```
+
+Direct Foundry load targets require `--allow-live-model`; billable model load is never run by CI.
+
+## Documentation
+
+- [Architecture](docs/01-architecture.md)
+- [Security](docs/security.md)
+- [Client authentication](docs/client-authentication.md)
+- [Capacity](docs/03-capacity-plan.md)
+- [Availability and DR](docs/availability-dr.md)
+- [Networking](docs/networking.md)
+- [Observability](docs/observability.md)
+- [Load testing](docs/load-testing.md)
+- [Operations and rollback](docs/operations-runbook.md)
+- [Production readiness](docs/production-readiness.md)

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       environment_profile:
-        description: "Environment profile (poc or prod)"
+        description: Environment profile
         required: true
-        default: "poc"
+        default: poc
         type: choice
         options:
           - poc
@@ -19,50 +19,168 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate repository
         run: scripts/test/validate.sh
 
   whatif:
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment_profile }}
+    environment: ${{ inputs.environment_profile == 'prod' && 'prod-primary' || 'poc' }}
     permissions:
       id-token: write
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Azure Login (OIDC)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Azure login with OIDC
         uses: azure/login@718491048c7421e7840f2ec36345bc913f3b3570 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: What-if Bicep deployment
+      - name: Reject missing or placeholder production inputs
+        if: inputs.environment_profile == 'prod'
         env:
+          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          APIM_EXPECTED_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
+          FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
+          APIM_MIN_CAPACITY: ${{ vars.APIM_MIN_CAPACITY }}
+          APIM_DEFAULT_CAPACITY: ${{ vars.APIM_DEFAULT_CAPACITY }}
+          APIM_MAX_CAPACITY: ${{ vars.APIM_MAX_CAPACITY }}
+          APIM_NETWORKING_PROFILE: ${{ vars.APIM_NETWORKING_PROFILE }}
+          APIM_SUBNET_RESOURCE_ID: ${{ vars.APIM_SUBNET_RESOURCE_ID }}
+          APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
+          APIM_SECONDARY_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_SUBNET_RESOURCE_ID }}
+          APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
+        run: |
+          for value in "${ENTRA_TENANT_ID}" "${APIM_EXPECTED_AUDIENCE}" "${FOUNDRY_ACCOUNT_NAME}"; do
+            [[ -n "${value}" && "${value}" != *example* && "${value}" != 00000000-0000-0000-0000-000000000000 ]]
+          done
+          (( APIM_MIN_CAPACITY <= APIM_DEFAULT_CAPACITY && APIM_DEFAULT_CAPACITY <= APIM_MAX_CAPACITY ))
+          (( APIM_MIN_CAPACITY >= 3 && APIM_MIN_CAPACITY % 3 == 0 && APIM_DEFAULT_CAPACITY % 3 == 0 && APIM_MAX_CAPACITY % 3 == 0 ))
+          case "${APIM_NETWORKING_PROFILE}" in
+            public) ;;
+            private)
+              [[ -n "${APIM_SUBNET_RESOURCE_ID}" &&
+                 -n "${APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID}" &&
+                 -n "${APIM_SECONDARY_SUBNET_RESOURCE_ID}" &&
+                 -n "${APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID}" ]]
+              ;;
+            *) exit 1 ;;
+          esac
+      - name: What-if
+        env: &deployment-env
           AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          ENVIRONMENT_PROFILE: ${{ inputs.environment_profile }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_SECONDARY_LOCATION: ${{ vars.AZURE_SECONDARY_LOCATION }}
           APIM_NAME: ${{ vars.APIM_NAME }}
+          APIM_SECONDARY_NAME: ${{ vars.APIM_SECONDARY_NAME }}
           APIM_PUBLISHER_EMAIL: ${{ vars.APIM_PUBLISHER_EMAIL }}
           APIM_PUBLISHER_NAME: ${{ vars.APIM_PUBLISHER_NAME }}
-          FOUNDRY_BASE_URL: ${{ vars.FOUNDRY_BASE_URL }}
+          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
           APIM_EXPECTED_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
           APIM_REQUIRED_APP_ROLE: ${{ vars.APIM_REQUIRED_APP_ROLE }}
+          FOUNDRY_BASE_URL: ${{ vars.FOUNDRY_BASE_URL }}
+          FOUNDRY_SECONDARY_BASE_URL: ${{ vars.FOUNDRY_SECONDARY_BASE_URL }}
+          FOUNDRY_SUBSCRIPTION_ID: ${{ vars.FOUNDRY_SUBSCRIPTION_ID }}
+          FOUNDRY_RESOURCE_GROUP: ${{ vars.FOUNDRY_RESOURCE_GROUP }}
+          FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
+          FOUNDRY_SECONDARY_RESOURCE_GROUP: ${{ vars.FOUNDRY_SECONDARY_RESOURCE_GROUP }}
+          FOUNDRY_SECONDARY_ACCOUNT_NAME: ${{ vars.FOUNDRY_SECONDARY_ACCOUNT_NAME }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
           PER_USER_RATE_LIMIT: ${{ vars.PER_USER_RATE_LIMIT }}
           PER_USER_HOURLY_QUOTA: ${{ vars.PER_USER_HOURLY_QUOTA }}
           PER_USER_TOKEN_LIMIT: ${{ vars.PER_USER_TOKEN_LIMIT }}
+          APIM_MIN_CAPACITY: ${{ vars.APIM_MIN_CAPACITY }}
+          APIM_DEFAULT_CAPACITY: ${{ vars.APIM_DEFAULT_CAPACITY }}
+          APIM_MAX_CAPACITY: ${{ vars.APIM_MAX_CAPACITY }}
+          APIM_SCALE_OUT_CPU_THRESHOLD: ${{ vars.APIM_SCALE_OUT_CPU_THRESHOLD }}
+          APIM_SCALE_IN_CPU_THRESHOLD: ${{ vars.APIM_SCALE_IN_CPU_THRESHOLD }}
+          APIM_NETWORKING_PROFILE: ${{ vars.APIM_NETWORKING_PROFILE }}
+          APIM_SUBNET_RESOURCE_ID: ${{ vars.APIM_SUBNET_RESOURCE_ID }}
+          APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
+          APIM_SECONDARY_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_SUBNET_RESOURCE_ID }}
+          APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
+          APIM_PRIVATE_DNS_ZONE_RESOURCE_ID: ${{ vars.APIM_PRIVATE_DNS_ZONE_RESOURCE_ID }}
+          ACTION_GROUP_RESOURCE_ID: ${{ vars.ACTION_GROUP_RESOURCE_ID }}
+          TRAFFIC_MANAGER_NAME: ${{ vars.TRAFFIC_MANAGER_NAME }}
+        run: >-
+          az deployment group what-if
+          --resource-group "${AZURE_RESOURCE_GROUP}"
+          --template-file infra/main.bicep
+          --parameters "infra/params/${{ inputs.environment_profile }}.bicepparam"
+          --parameters entraTenantId="${ENTRA_TENANT_ID}"
+          expectedAudience="${APIM_EXPECTED_AUDIENCE}"
+          requiredAppRole="${APIM_REQUIRED_APP_ROLE}"
+          foundryBaseUrl="${FOUNDRY_BASE_URL}"
+          foundrySubscriptionId="${FOUNDRY_SUBSCRIPTION_ID}"
+          foundryResourceGroupName="${FOUNDRY_RESOURCE_GROUP}"
+          foundryAccountName="${FOUNDRY_ACCOUNT_NAME}"
+          opusDeploymentName="${ANTHROPIC_DEFAULT_OPUS_MODEL}"
+          sonnetDeploymentName="${ANTHROPIC_DEFAULT_SONNET_MODEL}"
+          haikuDeploymentName="${ANTHROPIC_DEFAULT_HAIKU_MODEL}"
+
+  deploy:
+    needs: whatif
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_profile == 'prod' && 'prod-primary' || 'poc' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Azure login with OIDC
+        uses: azure/login@718491048c7421e7840f2ec36345bc913f3b3570 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy
+        env: *deployment-env
+        run: >-
+          az deployment group create
+          --name "claude-gateway-${GITHUB_RUN_ID}"
+          --resource-group "${AZURE_RESOURCE_GROUP}"
+          --template-file infra/main.bicep
+          --parameters "infra/params/${{ inputs.environment_profile }}.bicepparam"
+          --parameters entraTenantId="${ENTRA_TENANT_ID}"
+          expectedAudience="${APIM_EXPECTED_AUDIENCE}"
+          requiredAppRole="${APIM_REQUIRED_APP_ROLE}"
+          foundryBaseUrl="${FOUNDRY_BASE_URL}"
+          foundrySubscriptionId="${FOUNDRY_SUBSCRIPTION_ID}"
+          foundryResourceGroupName="${FOUNDRY_RESOURCE_GROUP}"
+          foundryAccountName="${FOUNDRY_ACCOUNT_NAME}"
+          opusDeploymentName="${ANTHROPIC_DEFAULT_OPUS_MODEL}"
+          sonnetDeploymentName="${ANTHROPIC_DEFAULT_SONNET_MODEL}"
+          haikuDeploymentName="${ANTHROPIC_DEFAULT_HAIKU_MODEL}"
+          --output json
+          > "${RUNNER_TEMP}/deployment.json"
+      - name: Deployment summary
         run: |
-          case "${ENVIRONMENT_PROFILE}" in
-            poc|prod) ;;
-            *) echo "Unsupported environment profile" >&2; exit 1 ;;
-          esac
-          az deployment group what-if \
-            --resource-group "${AZURE_RESOURCE_GROUP}" \
-            --template-file infra/main.bicep \
-            --parameters "infra/params/${ENVIRONMENT_PROFILE}.bicepparam"
+          echo '### Azure deployment outputs' >> "${GITHUB_STEP_SUMMARY}"
+          jq '.properties.outputs' "${RUNNER_TEMP}/deployment.json" >> "${GITHUB_STEP_SUMMARY}"
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_profile == 'prod' && 'prod-primary' || 'poc' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Azure login as smoke-test identity
+        uses: azure/login@718491048c7421e7840f2ec36345bc913f3b3570 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_SMOKE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Post-deployment smoke test
+        env:
+          APIM_BASE_URL: https://${{ vars.APIM_NAME }}.azure-api.net/claude
+          APIM_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
+          APIM_TOKEN_HELPER: ${{ github.workspace }}/scripts/auth/apim-user-token-helper.sh
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+        run: scripts/test/smoke.sh
