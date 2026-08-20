@@ -7,12 +7,12 @@ managed workstation -> enterprise DNS -> primary APIM -> primary Foundry Claude
                                       \-> secondary APIM -> secondary Foundry Claude
 ```
 
-For public profiles, Traffic Manager uses priority routing and `/claude/health`; private profiles use customer-managed corporate DNS failover. Each Premium v2 service has the same API revision, named values, policy, diagnostics, backend circuit breaker, capacity rules, and an independent system-assigned identity. Each identity receives only `Cognitive Services User` on its existing Foundry account.
+For public profiles, Traffic Manager uses priority External Endpoints targeting each APIM FQDN and probes `/claude/health`; private profiles use customer-managed corporate DNS failover. Each Premium v2 service has the same API revision, named values, policy, diagnostics, backend circuit breaker, capacity rules, and an independent system-assigned identity. Each identity receives the documented minimum `Foundry User` role on its existing Foundry account.
 
 ## Request path
 
 1. Claude Code obtains a user token for the APIM application audience through `apiKeyHelper`.
-2. APIM validates tenant, audience, `oid`, `tid`, and app role from `x-api-key`.
+2. APIM validates tenant, audience, `oid`, `tid`, and app role from the bearer `Authorization` header.
 3. APIM keys request, hourly, and token controls by `tid:oid`.
 4. APIM removes caller/provider credentials and keeps identity only in bounded gateway traces.
 5. APIM selects the configured backend entity. Its circuit opens after repeated 429/5xx responses and honors `Retry-After`; APIM does not replay inference POSTs.

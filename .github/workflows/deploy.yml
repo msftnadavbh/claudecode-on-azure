@@ -52,19 +52,21 @@ jobs:
           APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
           APIM_SECONDARY_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_SUBNET_RESOURCE_ID }}
           APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID: ${{ vars.APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID }}
+          APIM_PRIVATE_DNS_ZONE_RESOURCE_ID: ${{ vars.APIM_PRIVATE_DNS_ZONE_RESOURCE_ID }}
         run: |
           for value in "${ENTRA_TENANT_ID}" "${APIM_EXPECTED_AUDIENCE}" "${FOUNDRY_ACCOUNT_NAME}"; do
             [[ -n "${value}" && "${value}" != *example* && "${value}" != 00000000-0000-0000-0000-000000000000 ]]
           done
           (( APIM_MIN_CAPACITY <= APIM_DEFAULT_CAPACITY && APIM_DEFAULT_CAPACITY <= APIM_MAX_CAPACITY ))
-          (( APIM_MIN_CAPACITY >= 3 && APIM_MIN_CAPACITY % 3 == 0 && APIM_DEFAULT_CAPACITY % 3 == 0 && APIM_MAX_CAPACITY % 3 == 0 ))
+          (( APIM_MIN_CAPACITY >= 2 ))
           case "${APIM_NETWORKING_PROFILE}" in
             public) ;;
             private)
               [[ -n "${APIM_SUBNET_RESOURCE_ID}" &&
                  -n "${APIM_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID}" &&
                  -n "${APIM_SECONDARY_SUBNET_RESOURCE_ID}" &&
-                 -n "${APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID}" ]]
+                 -n "${APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID}" &&
+                 -n "${APIM_PRIVATE_DNS_ZONE_RESOURCE_ID}" ]]
               ;;
             *) exit 1 ;;
           esac
@@ -160,7 +162,11 @@ jobs:
       - name: Deployment summary
         run: |
           echo '### Azure deployment outputs' >> "${GITHUB_STEP_SUMMARY}"
-          jq '.properties.outputs' "${RUNNER_TEMP}/deployment.json" >> "${GITHUB_STEP_SUMMARY}"
+          jq '.properties.outputs | {
+            primaryGatewayUrl: .primaryGatewayUrl.value,
+            secondaryGatewayUrl: .secondaryGatewayUrl.value,
+            gatewayFailoverFqdn: .gatewayFailoverFqdn.value
+          }' "${RUNNER_TEMP}/deployment.json" >> "${GITHUB_STEP_SUMMARY}"
 
   smoke:
     needs: deploy

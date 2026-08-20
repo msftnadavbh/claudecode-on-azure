@@ -18,4 +18,6 @@ Set `APIM_NETWORKING_PROFILE=private`. Supply, for each APIM region:
 
 Link the DNS zone to client VNets and validate resolution from corporate networks. Configure routes, NSGs, DNS, and egress required by APIM and Entra. The template does not create or alter Foundry private endpoints, DNS, firewalls, or public access; provide existing Foundry endpoint URLs that resolve from the APIM integration subnets.
 
+The outbound-integration subnet must be dedicated to one APIM instance, delegated to `Microsoft.Web/serverFarms`, and separate from the private-endpoint subnet. Deployment creates the `Gateway` private endpoint while public access is enabled, then performs a dependent APIM update that disables public access, as required by the APIM private-endpoint sequence.
+
 Traffic Manager is public DNS routing. A fully private corporate DNS failover implementation may replace it while retaining the two APIM instances; this customer-specific DNS integration is intentionally not created.

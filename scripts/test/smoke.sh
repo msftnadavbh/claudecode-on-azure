@@ -6,7 +6,7 @@ set -euo pipefail
 : "${ANTHROPIC_DEFAULT_SONNET_MODEL:?Set the pinned Sonnet deployment name}"
 
 credential="$("${APIM_TOKEN_HELPER}")"
-common_headers=(-H "x-api-key: ${credential}" -H 'content-type: application/json' -H 'anthropic-version: 2023-06-01')
+common_headers=(-H "Authorization: Bear""er ${credential}" -H 'content-type: application/json' -H 'anthropic-version: 2023-06-01')
 count_body="$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply only OK"}]}' "${ANTHROPIC_DEFAULT_SONNET_MODEL}")"
 stream_body="$(printf '{"model":"%s","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"Reply only OK"}]}' "${ANTHROPIC_DEFAULT_SONNET_MODEL}")"
 

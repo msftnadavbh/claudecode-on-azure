@@ -33,8 +33,10 @@ class AuthHelperTests(unittest.TestCase):
             }
             first = subprocess.check_output([HELPER], env=env, text=True).strip()
             second = subprocess.check_output([HELPER], env=env, text=True).strip()
-            self.assertEqual(first, "Bear" + "er token-1")
-            self.assertEqual(second, "Bear" + "er token-2")
+            self.assertEqual(first, "token-1")
+            self.assertEqual(second, "token-2")
+            self.assertFalse(first.startswith("Bearer "))
+            self.assertFalse(second.startswith("Bearer "))
             self.assertNotIn("token-1", "\n".join(p.read_text() for p in root.rglob("*") if p.is_file() and p != counter and p != fake_az))
 
     def test_production_environment_is_gateway_mode_and_scrubbed(self) -> None:

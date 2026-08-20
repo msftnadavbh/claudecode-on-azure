@@ -88,6 +88,8 @@ Do not run expensive end-to-end high-concurrency tests by default in CI.
 
 Gateway capacity is empirical: do not infer a supported SSE count by multiplying an undocumented connection figure by APIM units. Test every intended SKU, unit count, region, policy revision, payload distribution, `Ravg`, and `Rp95`; scale on sustained capacity/error/latency signals and repeat after changes.
 
+The current APIM classic/v2 service-limits table does not publish a concurrent backend-connection limit. Older support answers are not a sufficient production contract, so confirm the applicable limit with Microsoft for the selected Premium v2 deployment and prove sustained behavior before release. The 2,500-stream plateau is a synthetic gateway test target, not a claim that one Foundry backend authority supports 2,500 production streams.
+
 ## Foundry Quota Scope
 
 Verify current quota scope in the target subscription before every capacity approval. Global Standard deployments can share quota at a broader scope than a single resource or region; Data Zone Standard scope differs. A second resource or region therefore does not automatically add quota. Keep model/version deployment names explicit and compare each calculated TPM/RPM dimension with the portal's effective quota.

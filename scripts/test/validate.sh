@@ -31,7 +31,7 @@ children = list(inbound)
 validation = inbound.find("validate-azure-ad-token")
 assert validation is not None
 assert validation.get("tenant-id") == "{{entra-tenant-id}}"
-assert validation.get("header-name") == "x-api-key"
+assert validation.get("header-name") == "Authorization"
 for claim in ("oid", "tid", "roles"):
     assert validation.find(f"./required-claims/claim[@name='{claim}']") is not None
 assert children.index(validation) < children.index(inbound.find("rate-limit-by-key"))
@@ -53,7 +53,7 @@ delete_auth = inbound.find("set-header[@name='Authorization'][@exists-action='de
 managed_identity = inbound.find("authentication-managed-identity")
 override_auth = inbound.find("set-header[@name='Authorization'][@exists-action='override']")
 assert children.index(delete_auth) < children.index(managed_identity) < children.index(override_auth)
-assert managed_identity.get("resource") == "https://cognitiveservices.azure.com"
+assert managed_identity.get("resource") == "https://ai.azure.com"
 assert inbound.find("set-backend-service").get("backend-id") == "foundry-backend"
 assert inbound.find("llm-token-limit") is not None
 assert inbound.find("set-header[@name='x-apim-caller-key']") is None
@@ -71,10 +71,18 @@ for route in ("/v1/messages", "/v1/messages/count_tokens"):
     assert route in module_text
 assert "subscriptionRequired: false" in module_text
 assert "circuitBreaker:" in module_text and "acceptRetryAfter: true" in module_text
+assert "<retry" not in policy_text
 assert "body:" in module_text and module_text.count("bytes: 0") >= 4
 assert "var validatedCapacities = capacitiesAreValid" in module_text
-assert "multiples of three." in module_text
-assert module_text.count("value: string(capacityIncrement)") == 2
+assert "minimumCapacity >= 2" in module_text
+assert "capacityIncrement" not in module_text
+assert module_text.count("value: '1'") == 2
+assert module_text.count("metricName: 'CpuPercent_Gateway'") == 3
+assert "CpuPercentage" not in module_text
+assert "metricName: 'Capacity'" not in module_text
+assert "identityClientId: 'systemAssigned'" in module_text
+assert "monitoringMetricsPublisherRoleId" in module_text
+assert "percentage: 10" in module_text
 
 main_text = Path("infra/main.bicep").read_text()
 prod_text = Path("infra/params/prod.bicepparam").read_text()
@@ -87,10 +95,30 @@ for name in (
 assert "defaultCapacity = 1" not in prod_text
 assert "param apimSkuName = 'BasicV2'" in Path("infra/params/poc.bicepparam").read_text()
 assert "param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'public'" in main_text
+assert "validatedFoundryBaseUrl" in main_text
+assert "endsWith(foundryBaseUrl, '/anthropic')" in main_text
+assert "validatedApimPrivateDnsZoneResourceId" in main_text
+assert main_text.count("trafficManagerProfiles/externalEndpoints") == 2
+assert "trafficManagerProfiles/azureEndpoints" not in main_text
+assert main_text.count("target: primaryApim.outputs.apimGatewayHostname") == 1
+assert main_text.count("target: secondaryApim!.outputs.apimGatewayHostname") == 1
+assert "primaryPrivateLockdown" in main_text
+assert "secondaryPrivateLockdown" in main_text
+
+lockdown_text = Path("infra/modules/apim-private-lockdown.bicep").read_text()
+assert "publicNetworkAccess: 'Enabled'" in module_text
+assert "publicNetworkAccess: 'Disabled'" in lockdown_text
+assert re.search(r"module primaryPrivateLockdown.*?dependsOn:\s*\[\s*primaryApim", main_text, re.S)
+assert re.search(r"module secondaryPrivateLockdown.*?dependsOn:\s*\[\s*secondaryApim", main_text, re.S)
+
+rbac_text = Path("infra/modules/foundry-rbac.bicep").read_text()
+assert "53ca6127-db72-4b80-b1b0-d745d6d5456d" in rbac_text
+assert "a97b65f3-24c7-4388-baec-2e87135dc908" not in rbac_text
 
 workflow = Path(".github/workflows/deploy.yml").read_text()
 assert "az deployment group create" in workflow
 assert "scripts/test/smoke.sh" in workflow
+assert "jq '.properties.outputs'" not in workflow
 for name in (
     "APIM_SECONDARY_SUBNET_RESOURCE_ID",
     "APIM_SECONDARY_PRIVATE_ENDPOINT_SUBNET_RESOURCE_ID",
