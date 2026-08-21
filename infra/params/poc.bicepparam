@@ -17,7 +17,6 @@ param haikuDeploymentName = 'example-claude-deployment'
 
 // Intentionally tiny limits for PoC behavior demonstration.
 param perUserRateLimit = 20
-param perUserHourlyQuota = 40
 param perUserTokenLimit = 4000
 
 // Basic v2 is the lowest practical tier supporting Anthropic LLM policies.

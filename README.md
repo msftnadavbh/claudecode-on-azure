@@ -10,10 +10,10 @@ APIM validates each developer's Entra identity, applies per-user fairness contro
 
 - Generic Claude Code gateway mode with a refreshable Entra `apiKeyHelper`, no extra bearer-token cache, subprocess credential scrubbing, and independent Opus/Sonnet/Haiku deployment aliases.
 - `/v1/messages` and `/v1/messages/count_tokens`, native headers/query passthrough, unbuffered SSE, credential stripping, and APIM backend circuit breaking without automatic POST retries.
-- Basic v2 PoC and configurable Premium v2 production capacity/autoscale.
-- Two independent regional APIM services, public-profile Traffic Manager failover, availability zones, and public/private networking profiles.
+- Basic v2 PoC and a fixed-capacity, single-region Premium v2 production baseline; autoscale is optional.
+- Optional second APIM and public Traffic Manager failover, Premium v2 zone redundancy, and public/private networking profiles.
 - Documented minimum `Foundry User` assignment on existing Foundry accounts; this repository does not manage Foundry accounts or deployments.
-- Log Analytics, workspace-based Application Insights, zero-body APIM diagnostics, low-cardinality metrics/alerts, and safe identity traces.
+- Shared Log Analytics and workspace-based Application Insights, zero-body APIM diagnostics, low-cardinality metrics/alerts, and safe identity traces.
 - OIDC validation/what-if/deployment/smoke workflows and asynchronous 500–2,500 stream tooling.
 
 ## PoC quick start
@@ -36,7 +36,7 @@ az deployment group create --resource-group <rg> --template-file infra/main.bice
 1. Create the caller-facing Entra application, app role, and GitHub OIDC federated identities.
 2. Create/pin customer-owned Claude deployments and approve quotas.
 3. Configure the GitHub `prod-primary` environment variables used by `infra/params/prod.bicepparam`; configure required reviewers.
-4. Choose `public` or `private`. Private mode requires separate outbound-integration and private-endpoint subnets per region plus the APIM private DNS zone.
+4. Choose `public` or `private`. Private mode requires one dedicated Premium v2 VNet-injection subnet per APIM region and customer-managed DNS.
 5. Record measured capacity values, dispatch `deploy`, review what-if, approve, deploy, and inspect the smoke result.
 6. Distribute managed Claude Code settings from [docs/client-authentication.md](docs/client-authentication.md).
 
@@ -68,3 +68,4 @@ Direct Foundry load targets require `--allow-live-model`; billable model load is
 - [Load testing](docs/load-testing.md)
 - [Operations and rollback](docs/operations-runbook.md)
 - [Production readiness](docs/production-readiness.md)
+- [Complexity reduction plan](docs/complexity-reduction-plan.md)

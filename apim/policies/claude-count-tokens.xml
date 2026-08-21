@@ -2,7 +2,6 @@
   <inbound>
     <base />
     <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
-    <llm-token-limit counter-key="@((string)context.Variables[&quot;callerKey&quot;])" tokens-per-minute="{{per-user-token-limit}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" />
   </inbound>
   <backend>
     <base />

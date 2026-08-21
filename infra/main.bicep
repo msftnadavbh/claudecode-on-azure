@@ -80,10 +80,6 @@ param haikuDeploymentName string
 @minValue(1)
 param perUserRateLimit int
 
-@description('Quota calls per hour per user identity.')
-@minValue(1)
-param perUserHourlyQuota int
-
 @description('Quota tokens per minute per user identity.')
 @minValue(1)
 param perUserTokenLimit int
@@ -93,19 +89,19 @@ param perUserTokenLimit int
 param apimSkuName string
 
 @minValue(1)
-@description('Minimum warm APIM capacity.')
-param minimumCapacity int
-
-@minValue(1)
 @description('Initially deployed APIM capacity.')
 param defaultCapacity int
 
 @minValue(1)
+@description('Minimum warm APIM capacity.')
+param minimumCapacity int = defaultCapacity
+
+@minValue(1)
 @description('Maximum autoscale APIM capacity.')
-param maximumCapacity int
+param maximumCapacity int = defaultCapacity
 
 @description('Enable Azure Monitor autoscale for production APIM instances.')
-param autoscaleEnabled bool
+param autoscaleEnabled bool = false
 
 @minValue(1)
 @maxValue(100)
@@ -122,23 +118,20 @@ param zoneRedundant bool = false
 @description('Gateway networking profile.')
 param networkingProfile string = 'public'
 
-@description('Existing delegated subnet resource ID for Premium v2 outbound VNet integration.')
+@description('Existing dedicated subnet resource ID for Premium v2 VNet injection.')
 param apimSubnetResourceId string = ''
 
-@description('Existing subnet resource ID for the primary APIM private endpoint.')
-param apimPrivateEndpointSubnetResourceId string = ''
-
-@description('Existing delegated subnet resource ID for secondary APIM outbound VNet integration.')
+@description('Existing dedicated subnet resource ID for secondary Premium v2 VNet injection.')
 param secondaryApimSubnetResourceId string = ''
-
-@description('Existing subnet resource ID for the secondary APIM private endpoint.')
-param secondaryApimPrivateEndpointSubnetResourceId string = ''
-
-@description('Existing private DNS zone resource ID for privatelink.azure-api.net.')
-param apimPrivateDnsZoneResourceId string = ''
 
 @description('Deploy Log Analytics, Application Insights, APIM diagnostics, and alerts.')
 param observabilityEnabled bool = true
+
+@description('Existing shared Log Analytics workspace resource ID. Leave both telemetry IDs empty to create shared resources.')
+param existingWorkspaceResourceId string = ''
+
+@description('Existing shared Application Insights resource ID. Leave both telemetry IDs empty to create shared resources.')
+param existingAppInsightsResourceId string = ''
 
 @description('Resource ID of an existing Action Group. Empty creates alerts without actions.')
 param actionGroupResourceId string = ''
@@ -155,11 +148,11 @@ var foundryBaseUrlIsValid = foundryBaseUri.scheme == 'https' && endsWith(toLower
 var secondaryFoundryBaseUrlIsValid = !deploySecondary || (secondaryFoundryBaseUri.scheme == 'https' && endsWith(toLower(secondaryFoundryBaseUri.host), '.services.ai.azure.com') && secondaryFoundryBaseUri.path == '/anthropic' && toLower(secondaryFoundryBaseUrl) == 'https://${toLower(secondaryFoundryBaseUri.host)}/anthropic')
 var validatedFoundryBaseUrl = foundryBaseUrlIsValid ? foundryBaseUrl : fail('Foundry base URL must use an HTTPS *.services.ai.azure.com host and exactly the /anthropic path, without additional URI components.')
 var validatedSecondaryFoundryBaseUrl = secondaryFoundryBaseUrlIsValid ? secondaryFoundryBaseUrl : fail('Secondary Foundry base URL must use an HTTPS *.services.ai.azure.com host and exactly the /anthropic path, without additional URI components.')
+var validatedSecondaryLocation = !deploySecondary || !empty(secondaryLocation) ? secondaryLocation : fail('secondaryLocation is required when deploySecondary is true.')
+var validatedSecondaryApimName = !deploySecondary || !empty(secondaryApimName) ? secondaryApimName : fail('secondaryApimName is required when deploySecondary is true.')
 var validatedApimSubnetResourceId = networkingProfile != 'private' || !empty(apimSubnetResourceId) ? apimSubnetResourceId : fail('Private networking requires the primary APIM integration subnet.')
-var validatedApimPrivateEndpointSubnetResourceId = networkingProfile != 'private' || !empty(apimPrivateEndpointSubnetResourceId) ? apimPrivateEndpointSubnetResourceId : fail('Private networking requires the primary private-endpoint subnet.')
 var validatedSecondaryApimSubnetResourceId = networkingProfile != 'private' || !deploySecondary || !empty(secondaryApimSubnetResourceId) ? secondaryApimSubnetResourceId : fail('Private networking requires the secondary APIM integration subnet.')
-var validatedSecondaryApimPrivateEndpointSubnetResourceId = networkingProfile != 'private' || !deploySecondary || !empty(secondaryApimPrivateEndpointSubnetResourceId) ? secondaryApimPrivateEndpointSubnetResourceId : fail('Private networking requires the secondary private-endpoint subnet.')
-var validatedApimPrivateDnsZoneResourceId = networkingProfile != 'private' || !empty(apimPrivateDnsZoneResourceId) ? apimPrivateDnsZoneResourceId : fail('Private networking requires the APIM private DNS zone.')
+var deployTrafficManager = deploySecondary && trafficManagerEnabled && networkingProfile == 'public'
 
 module primaryApim './modules/apim.bicep' = {
   name: 'primaryApim'
@@ -174,30 +167,22 @@ module primaryApim './modules/apim.bicep' = {
     expectedAudience: expectedAudience
     requiredAppRole: requiredAppRole
     perUserRateLimit: perUserRateLimit
-    perUserHourlyQuota: perUserHourlyQuota
     perUserTokenLimit: perUserTokenLimit
     apimSkuName: apimSkuName
     minimumCapacity: minimumCapacity
     defaultCapacity: defaultCapacity
     maximumCapacity: maximumCapacity
-    autoscaleEnabled: autoscaleEnabled
-    scaleOutCpuThreshold: scaleOutCpuThreshold
-    scaleInCpuThreshold: scaleInCpuThreshold
     zoneRedundant: zoneRedundant
     networkingProfile: networkingProfile
     apimSubnetResourceId: validatedApimSubnetResourceId
-    apimPrivateEndpointSubnetResourceId: validatedApimPrivateEndpointSubnetResourceId
-    apimPrivateDnsZoneResourceId: validatedApimPrivateDnsZoneResourceId
-    observabilityEnabled: observabilityEnabled
-    actionGroupResourceId: actionGroupResourceId
   }
 }
 
 module secondaryApim './modules/apim.bicep' = if (deploySecondary) {
   name: 'secondaryApim'
   params: {
-    apimName: secondaryApimName
-    location: secondaryLocation
+    apimName: validatedSecondaryApimName
+    location: validatedSecondaryLocation
     foundryBaseUrl: validatedSecondaryFoundryBaseUrl
     environmentProfile: environmentProfile
     publisherEmail: publisherEmail
@@ -206,57 +191,48 @@ module secondaryApim './modules/apim.bicep' = if (deploySecondary) {
     expectedAudience: expectedAudience
     requiredAppRole: requiredAppRole
     perUserRateLimit: perUserRateLimit
-    perUserHourlyQuota: perUserHourlyQuota
     perUserTokenLimit: perUserTokenLimit
     apimSkuName: apimSkuName
     minimumCapacity: minimumCapacity
     defaultCapacity: defaultCapacity
     maximumCapacity: maximumCapacity
-    autoscaleEnabled: autoscaleEnabled
-    scaleOutCpuThreshold: scaleOutCpuThreshold
-    scaleInCpuThreshold: scaleInCpuThreshold
     zoneRedundant: zoneRedundant
     networkingProfile: networkingProfile
     apimSubnetResourceId: validatedSecondaryApimSubnetResourceId
-    apimPrivateEndpointSubnetResourceId: validatedSecondaryApimPrivateEndpointSubnetResourceId
-    apimPrivateDnsZoneResourceId: validatedApimPrivateDnsZoneResourceId
-    observabilityEnabled: observabilityEnabled
+  }
+}
+
+var apimInstances = concat([
+  {
+    name: apimName
+    location: location
+    principalId: primaryApim.outputs.apimPrincipalId
+  }
+], deploySecondary ? [
+  {
+    name: validatedSecondaryApimName
+    location: validatedSecondaryLocation
+    principalId: secondaryApim!.outputs.apimPrincipalId
+  }
+] : [])
+
+module observability './modules/observability.bicep' = {
+  name: 'sharedObservability'
+  params: {
+    enabled: observabilityEnabled
+    location: location
+    namePrefix: apimName
+    apimInstances: apimInstances
+    existingWorkspaceResourceId: existingWorkspaceResourceId
+    existingAppInsightsResourceId: existingAppInsightsResourceId
+    autoscaleEnabled: autoscaleEnabled
+    minimumCapacity: minimumCapacity
+    defaultCapacity: defaultCapacity
+    maximumCapacity: maximumCapacity
+    scaleOutCpuThreshold: scaleOutCpuThreshold
+    scaleInCpuThreshold: scaleInCpuThreshold
     actionGroupResourceId: actionGroupResourceId
   }
-}
-
-module primaryPrivateLockdown './modules/apim-private-lockdown.bicep' = if (networkingProfile == 'private') {
-  name: 'primaryPrivateLockdown'
-  params: {
-    apimName: apimName
-    location: location
-    publisherEmail: publisherEmail
-    publisherName: publisherName
-    apimSkuName: apimSkuName
-    defaultCapacity: defaultCapacity
-    zoneRedundant: zoneRedundant
-    apimSubnetResourceId: validatedApimSubnetResourceId
-  }
-  dependsOn: [
-    primaryApim
-  ]
-}
-
-module secondaryPrivateLockdown './modules/apim-private-lockdown.bicep' = if (deploySecondary && networkingProfile == 'private') {
-  name: 'secondaryPrivateLockdown'
-  params: {
-    apimName: secondaryApimName
-    location: secondaryLocation
-    publisherEmail: publisherEmail
-    publisherName: publisherName
-    apimSkuName: apimSkuName
-    defaultCapacity: defaultCapacity
-    zoneRedundant: zoneRedundant
-    apimSubnetResourceId: validatedSecondaryApimSubnetResourceId
-  }
-  dependsOn: [
-    secondaryApim
-  ]
 }
 
 module primaryFoundryRbac './modules/foundry-rbac.bicep' = {
@@ -277,7 +253,7 @@ module secondaryFoundryRbac './modules/foundry-rbac.bicep' = if (deploySecondary
   }
 }
 
-resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
+resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = if (deployTrafficManager) {
   name: trafficManagerName
   location: 'global'
   properties: {
@@ -298,7 +274,7 @@ resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = 
   }
 }
 
-resource primaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/externalEndpoints@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
+resource primaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/externalEndpoints@2022-04-01' = if (deployTrafficManager) {
   parent: trafficManager
   name: 'primary'
   properties: {
@@ -308,7 +284,7 @@ resource primaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/extern
   }
 }
 
-resource secondaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/externalEndpoints@2022-04-01' = if (deploySecondary && trafficManagerEnabled) {
+resource secondaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/externalEndpoints@2022-04-01' = if (deployTrafficManager) {
   parent: trafficManager
   name: 'secondary'
   properties: {
@@ -320,7 +296,7 @@ resource secondaryTrafficEndpoint 'Microsoft.Network/trafficManagerProfiles/exte
 
 output primaryGatewayUrl string = primaryApim.outputs.apimGatewayUrl
 output secondaryGatewayUrl string = deploySecondary ? secondaryApim!.outputs.apimGatewayUrl : ''
-output gatewayFailoverFqdn string = deploySecondary && trafficManagerEnabled ? trafficManager!.properties.dnsConfig.fqdn : ''
+output gatewayFailoverFqdn string = deployTrafficManager ? trafficManager!.properties.dnsConfig.fqdn : ''
 output opusModel string = opusDeploymentName
 output sonnetModel string = sonnetDeploymentName
 output haikuModel string = haikuDeploymentName
