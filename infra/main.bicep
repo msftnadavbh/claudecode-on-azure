@@ -40,6 +40,15 @@ param expectedAudience string
 @minLength(1)
 param requiredAppRole string
 
+@description('Allow Claude Desktop delegated access as an alternative to the existing app role.')
+param enableClaudeDesktopDelegatedAuth bool = false
+
+@description('Public client ID used by managed Claude Desktop.')
+param claudeDesktopClientId string = 'disabled'
+
+@description('Delegated scope claim required from managed Claude Desktop.')
+param claudeDesktopDelegatedScope string = 'disabled'
+
 @description('Primary Foundry Anthropic base URL copied from Foundry, including /anthropic.')
 @minLength(1)
 param foundryBaseUrl string
@@ -83,6 +92,16 @@ param perUserRateLimit int
 @description('Quota tokens per minute per user identity.')
 @minValue(1)
 param perUserTokenLimit int
+
+@minValue(1)
+@maxValue(2000)
+@description('Maximum concurrent forwarded requests per user identity.')
+param perUserConcurrentStreamLimit int = 2000
+
+@minValue(1)
+@maxValue(2000)
+@description('Maximum concurrent forwarded requests to one Foundry authority.')
+param aggregateConcurrentStreamLimit int = 2000
 
 @allowed(['BasicV2', 'StandardV2', 'PremiumV2'])
 @description('APIM v2 SKU. Production private and zone-redundant profiles require PremiumV2.')
@@ -136,6 +155,10 @@ param existingAppInsightsResourceId string = ''
 @description('Resource ID of an existing Action Group. Empty creates alerts without actions.')
 param actionGroupResourceId string = ''
 
+@minValue(1)
+@maxValue(100)
+param memoryAlertThreshold int = 80
+
 @description('Deploy Traffic Manager priority routing for public secondary APIM.')
 param trafficManagerEnabled bool = deploySecondary && networkingProfile == 'public'
 
@@ -153,6 +176,7 @@ var validatedSecondaryApimName = !deploySecondary || !empty(secondaryApimName) ?
 var validatedApimSubnetResourceId = networkingProfile != 'private' || !empty(apimSubnetResourceId) ? apimSubnetResourceId : fail('Private networking requires the primary APIM integration subnet.')
 var validatedSecondaryApimSubnetResourceId = networkingProfile != 'private' || !deploySecondary || !empty(secondaryApimSubnetResourceId) ? secondaryApimSubnetResourceId : fail('Private networking requires the secondary APIM integration subnet.')
 var deployTrafficManager = deploySecondary && trafficManagerEnabled && networkingProfile == 'public'
+var validatedActionGroupResourceId = environmentProfile != 'prod' || !empty(actionGroupResourceId) ? actionGroupResourceId : fail('Production requires an existing Action Group resource ID.')
 
 module primaryApim './modules/apim.bicep' = {
   name: 'primaryApim'
@@ -166,8 +190,13 @@ module primaryApim './modules/apim.bicep' = {
     entraTenantId: entraTenantId
     expectedAudience: expectedAudience
     requiredAppRole: requiredAppRole
+    enableClaudeDesktopDelegatedAuth: enableClaudeDesktopDelegatedAuth
+    claudeDesktopClientId: claudeDesktopClientId
+    claudeDesktopDelegatedScope: claudeDesktopDelegatedScope
     perUserRateLimit: perUserRateLimit
     perUserTokenLimit: perUserTokenLimit
+    perUserConcurrentStreamLimit: perUserConcurrentStreamLimit
+    aggregateConcurrentStreamLimit: aggregateConcurrentStreamLimit
     apimSkuName: apimSkuName
     minimumCapacity: minimumCapacity
     defaultCapacity: defaultCapacity
@@ -190,8 +219,13 @@ module secondaryApim './modules/apim.bicep' = if (deploySecondary) {
     entraTenantId: entraTenantId
     expectedAudience: expectedAudience
     requiredAppRole: requiredAppRole
+    enableClaudeDesktopDelegatedAuth: enableClaudeDesktopDelegatedAuth
+    claudeDesktopClientId: claudeDesktopClientId
+    claudeDesktopDelegatedScope: claudeDesktopDelegatedScope
     perUserRateLimit: perUserRateLimit
     perUserTokenLimit: perUserTokenLimit
+    perUserConcurrentStreamLimit: perUserConcurrentStreamLimit
+    aggregateConcurrentStreamLimit: aggregateConcurrentStreamLimit
     apimSkuName: apimSkuName
     minimumCapacity: minimumCapacity
     defaultCapacity: defaultCapacity
@@ -231,7 +265,8 @@ module observability './modules/observability.bicep' = {
     maximumCapacity: maximumCapacity
     scaleOutCpuThreshold: scaleOutCpuThreshold
     scaleInCpuThreshold: scaleInCpuThreshold
-    actionGroupResourceId: actionGroupResourceId
+    memoryAlertThreshold: memoryAlertThreshold
+    actionGroupResourceId: validatedActionGroupResourceId
   }
 }
 

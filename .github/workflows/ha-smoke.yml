@@ -1,0 +1,72 @@
+name: ha-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Observer-only drill phase
+        required: true
+        default: readiness
+        type: choice
+        options:
+          - readiness
+          - observe-failover
+          - observe-failback
+          - rollback-before
+          - rollback-after
+      runner_site:
+        description: In-network runner site
+        required: true
+        default: primary-net
+        type: choice
+        options:
+          - primary-net
+          - secondary-net
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, linux, x64, claude-gateway-smoke, "${{ inputs.runner_site }}"]
+    environment: prod-primary
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Azure login as smoke-test identity
+        uses: azure/login@718491048c7421e7840f2ec36345bc913f3b3570 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_SMOKE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Observe endpoint matrix
+        env:
+          APIM_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
+          APIM_PRIMARY_BASE_URL: ${{ vars.APIM_PRIMARY_BASE_URL }}
+          APIM_SECONDARY_BASE_URL: ${{ vars.APIM_SECONDARY_BASE_URL }}
+          APIM_FAILOVER_BASE_URL: ${{ vars.APIM_FAILOVER_BASE_URL }}
+          OPUS_MODEL: ${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}
+          SONNET_MODEL: ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+          HAIKU_MODEL: ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
+        run: |
+          umask 077
+          python3 scripts/test/endpoint_smoke_matrix.py \
+            --endpoint "primary=${APIM_PRIMARY_BASE_URL}" \
+            --endpoint "secondary=${APIM_SECONDARY_BASE_URL}" \
+            --endpoint "failover=${APIM_FAILOVER_BASE_URL}" \
+            --token-helper "${GITHUB_WORKSPACE}/scripts/auth/apim-user-token-helper.sh" \
+            --model "opus=${OPUS_MODEL}" \
+            --model "sonnet=${SONNET_MODEL}" \
+            --model "haiku=${HAIKU_MODEL}" \
+            --phase "${{ inputs.phase }}" \
+            > "${RUNNER_TEMP}/ha-smoke.json"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ha-smoke-${{ github.run_id }}-${{ inputs.phase }}-${{ inputs.runner_site }}
+          path: ${{ runner.temp }}/ha-smoke.json
+          if-no-files-found: error
+          retention-days: 90

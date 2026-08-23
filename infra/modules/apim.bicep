@@ -9,8 +9,13 @@ param foundryBaseUrl string
 param entraTenantId string
 param expectedAudience string
 param requiredAppRole string
+param enableClaudeDesktopDelegatedAuth bool
+param claudeDesktopClientId string
+param claudeDesktopDelegatedScope string
 param perUserRateLimit int
 param perUserTokenLimit int
+param perUserConcurrentStreamLimit int
+param aggregateConcurrentStreamLimit int
 param apimSkuName string
 param minimumCapacity int
 param defaultCapacity int
@@ -22,6 +27,7 @@ param apimSubnetResourceId string
 var capacitiesAreValid = minimumCapacity <= defaultCapacity && defaultCapacity <= maximumCapacity && (!zoneRedundant || minimumCapacity >= 2)
 var validatedCapacity = capacitiesAreValid ? defaultCapacity : fail('APIM capacities must be ordered, and zone-redundant capacity must be at least two units.')
 var privateNetworking = networkingProfile == 'private'
+var validatedPerUserConcurrentStreamLimit = perUserConcurrentStreamLimit <= aggregateConcurrentStreamLimit ? perUserConcurrentStreamLimit : fail('Per-user concurrent streams cannot exceed the aggregate limit.')
 
 resource apim 'Microsoft.ApiManagement/service@2025-03-01-preview' = {
   name: apimName
@@ -81,8 +87,13 @@ var namedValues = {
   'entra-tenant-id': entraTenantId
   'expected-audience': expectedAudience
   'required-app-role': requiredAppRole
+  'claude-desktop-delegated-auth-enabled': string(enableClaudeDesktopDelegatedAuth)
+  'claude-desktop-client-id': claudeDesktopClientId
+  'claude-desktop-delegated-scope': claudeDesktopDelegatedScope
   'per-user-rate-limit': string(perUserRateLimit)
   'per-user-token-limit': string(perUserTokenLimit)
+  'per-user-concurrent-stream-limit': string(validatedPerUserConcurrentStreamLimit)
+  'aggregate-concurrent-stream-limit': string(aggregateConcurrentStreamLimit)
   'environment-profile': environmentProfile
 }
 

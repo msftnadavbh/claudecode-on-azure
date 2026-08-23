@@ -18,6 +18,8 @@ param haikuDeploymentName = 'example-claude-deployment'
 // Intentionally tiny limits for PoC behavior demonstration.
 param perUserRateLimit = 20
 param perUserTokenLimit = 4000
+param perUserConcurrentStreamLimit = 20
+param aggregateConcurrentStreamLimit = 40
 
 // Basic v2 is the lowest practical tier supporting Anthropic LLM policies.
 param apimSkuName = 'BasicV2'

@@ -97,14 +97,16 @@ async def run_probe(args: argparse.Namespace) -> dict:
     if target.hostname.endswith(".services.ai.azure.com") and not args.allow_live_model:
         raise ValueError("direct Foundry targets require --allow-live-model")
 
-    authorization = None
-    if args.token_helper:
-        completed = subprocess.run(
-            [args.token_helper], check=True, capture_output=True, text=True
-        )
+    token_helpers = args.token_helper or []
+    if isinstance(token_helpers, str):
+        token_helpers = [token_helpers]
+    authorizations = []
+    for helper in token_helpers:
+        completed = subprocess.run([helper], check=True, capture_output=True, text=True)
         authorization = completed.stdout.strip()
         if not authorization:
             raise ValueError("token helper returned an empty credential")
+        authorizations.append(authorization)
 
     ssl_context = ssl.create_default_context() if target.scheme == "https" else None
     port = target.port or (443 if target.scheme == "https" else 80)
@@ -154,8 +156,8 @@ async def run_probe(args: argparse.Namespace) -> dict:
                 f"X-Synthetic-Initial-Delay-Ms: {args.initial_delay_ms}",
                 f"X-Synthetic-Status: {args.synthetic_status}",
             ]
-            if authorization:
-                headers.append("Authorization: " + "Bear" + "er " + authorization)
+            if authorizations:
+                headers.append("Authorization: " + "Bear" + "er " + authorizations[index % len(authorizations)])
             writer.write(("\r\n".join(headers) + "\r\n\r\n").encode() + body)
             await writer.drain()
 
@@ -189,7 +191,7 @@ async def run_probe(args: argparse.Namespace) -> dict:
             ttfb_seconds.append(time.perf_counter() - request_start)
 
             if status == 429:
-                outcomes["backend_429"] += 1
+                outcomes["http_429"] += 1
                 return
             if status >= 500:
                 outcomes["backend_5xx"] += 1
@@ -270,9 +272,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--synthetic-status", type=int, choices=[200, 429, 500, 503], default=200)
     parser.add_argument("--disconnect-after-events", type=int, default=-1)
     parser.add_argument("--model", default="example-sonnet-deployment")
-    parser.add_argument("--token-helper", default=os.getenv("APIM_TOKEN_HELPER"))
+    parser.add_argument("--token-helper", action="append")
+    parser.add_argument("--min-ok", type=int)
+    parser.add_argument("--max-ok", type=int)
+    parser.add_argument("--require-429", action="store_true")
     parser.add_argument("--allow-live-model", action="store_true")
     args = parser.parse_args()
+    if not args.token_helper and os.getenv("APIM_TOKEN_HELPER"):
+        args.token_helper = [os.environ["APIM_TOKEN_HELPER"]]
     if args.concurrency is None and args.smoke_concurrency is None:
         parser.error("select a maintained --concurrency plateau or --smoke-concurrency")
     if args.concurrency is not None and args.smoke_concurrency is not None:
@@ -288,6 +295,16 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     try:
-        print(json.dumps(asyncio.run(run_probe(parse_args())), sort_keys=True))
+        args = parse_args()
+        result = asyncio.run(run_probe(args))
+        print(json.dumps(result, sort_keys=True))
+        failures = sum(result.get(name, 0) for name in (
+            "timeout", "connection_failure", "backend_5xx", "http_failure", "stream_failure"
+        ))
+        ok = result.get("ok", 0)
+        accepted = failures == 0 and (args.min_ok is None or ok >= args.min_ok) and (args.max_ok is None or ok <= args.max_ok)
+        accepted = accepted and (not args.require_429 or result.get("http_429", 0) > 0)
+        if not accepted:
+            raise SystemExit(1)
     except (ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc)) from exc

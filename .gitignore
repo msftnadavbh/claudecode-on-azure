@@ -7,3 +7,8 @@ __pycache__/
 .env
 node_modules/
 dist/
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+plan.raw.json

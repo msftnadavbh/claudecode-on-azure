@@ -4,9 +4,9 @@ Production creates one shared Log Analytics workspace and workspace-based Applic
 
 The Application Insights logger uses the APIM system-assigned identity with `Monitoring Metrics Publisher` on the component. Successful-request diagnostic sampling is 10%; errors are always retained. Resource metrics remain unsampled. Reassess the sampling percentage from measured cost and throughput before rollout.
 
-Captured signals include region/resource, API operation, status/result class, gateway CPU/memory/capacity platform metrics, 401/403/429/5xx rates, and backend failures. Safe traces add APIM request ID plus validated tenant/user for incident investigation. No prompt, completion, source body, authorization header, API key, session ID, or agent ID is captured by APIM diagnostics.
+Captured signals include region/resource, API operation, status/result class, gateway CPU and memory, gateway 401/403/429, gateway 5xx, and backend 5xx. Safe traces add APIM request ID plus validated tenant/user for incident investigation. No prompt, completion, source body, authorization header, API key, session ID, or agent ID is captured by APIM diagnostics.
 
-Set `ACTION_GROUP_RESOURCE_ID` for production destinations. Alert thresholds are starting controls, not SLOs; tune from observed baselines. Create workbook/SLO views for:
+`ACTION_GROUP_RESOURCE_ID` is required for production. Alert thresholds are starting controls, not SLOs; tune from observed baselines.
 
 - authentication/authorization failures;
 - rate/quota pressure and Foundry 429;

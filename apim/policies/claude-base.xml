@@ -1,20 +1,34 @@
 <policies>
   <inbound>
     <base />
-    <validate-azure-ad-token tenant-id="{{entra-tenant-id}}" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid or missing Entra token.">
+    <validate-azure-ad-token tenant-id="{{entra-tenant-id}}" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid or missing Entra token." output-token-variable-name="validatedJwt">
       <audiences>
         <audience>{{expected-audience}}</audience>
       </audiences>
       <required-claims>
         <claim name="oid" />
         <claim name="tid" />
-        <claim name="roles" match="any">
-          <value>{{required-app-role}}</value>
-        </claim>
       </required-claims>
     </validate-azure-ad-token>
-    <set-variable name="callerObjectId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == &quot;oid&quot;)?.Value ?? &quot;anonymous&quot;)" />
-    <set-variable name="callerTenantId" value="@(context.Principal?.Claims?.FirstOrDefault(c => c.Type == &quot;tid&quot;)?.Value ?? &quot;unknown&quot;)" />
+    <set-variable name="callerObjectId" value="@(((Jwt)context.Variables[&quot;validatedJwt&quot;]).Claims.GetValueOrDefault(&quot;oid&quot;, &quot;&quot;))" />
+    <set-variable name="callerTenantId" value="@(((Jwt)context.Variables[&quot;validatedJwt&quot;]).Claims.GetValueOrDefault(&quot;tid&quot;, &quot;&quot;))" />
+    <set-variable name="callerAuthorized" value="@{
+      var claims = ((Jwt)context.Variables[&quot;validatedJwt&quot;]).Claims;
+      var hasRole = claims.ContainsKey(&quot;roles&quot;) &amp;&amp; claims[&quot;roles&quot;].Any(value => value == &quot;{{required-app-role}}&quot;);
+      var version = claims.GetValueOrDefault(&quot;ver&quot;, &quot;&quot;);
+      var actor = version == &quot;2.0&quot; ? claims.GetValueOrDefault(&quot;azp&quot;, &quot;&quot;) : version == &quot;1.0&quot; ? claims.GetValueOrDefault(&quot;appid&quot;, &quot;&quot;) : &quot;&quot;;
+      var scopes = claims.GetValueOrDefault(&quot;scp&quot;, &quot;&quot;).Split(' ');
+      var hasDesktopScope = scopes.Any(value => value == &quot;{{claude-desktop-delegated-scope}}&quot;);
+      return hasRole || (&quot;{{claude-desktop-delegated-auth-enabled}}&quot; == &quot;true&quot; &amp;&amp; actor == &quot;{{claude-desktop-client-id}}&quot; &amp;&amp; hasDesktopScope);
+    }" />
+    <choose>
+      <when condition="@(!(bool)context.Variables[&quot;callerAuthorized&quot;])">
+        <return-response>
+          <set-status code="403" reason="Forbidden" />
+          <set-body>Caller is not authorized.</set-body>
+        </return-response>
+      </when>
+    </choose>
     <set-variable name="callerKey" value="@((string)context.Variables[&quot;callerTenantId&quot;] + &quot;:&quot; + (string)context.Variables[&quot;callerObjectId&quot;])" />
     <set-header name="Authorization" exists-action="delete" />
     <set-header name="x-api-key" exists-action="delete" />
@@ -23,6 +37,7 @@
     <set-header name="x-functions-key" exists-action="delete" />
     <set-query-parameter name="subscription-key" exists-action="delete" />
     <set-query-parameter name="api-key" exists-action="delete" />
+    <set-query-parameter name="access_token" exists-action="delete" />
     <trace source="claude-gateway" severity="information">
       <message>@($"requestId={context.RequestId};tenant={context.Variables["callerTenantId"]};user={context.Variables["callerObjectId"]};operation={context.Operation.Id}")</message>
     </trace>
@@ -33,7 +48,11 @@
     </set-header>
   </inbound>
   <backend>
-    <forward-request buffer-response="false" />
+    <limit-concurrency key="@(&quot;claude-foundry:user:&quot; + (string)context.Variables[&quot;callerKey&quot;])" max-count="{{per-user-concurrent-stream-limit}}">
+      <limit-concurrency key="claude-foundry:aggregate" max-count="{{aggregate-concurrent-stream-limit}}">
+        <forward-request buffer-response="false" />
+      </limit-concurrency>
+    </limit-concurrency>
   </backend>
   <outbound>
     <base />

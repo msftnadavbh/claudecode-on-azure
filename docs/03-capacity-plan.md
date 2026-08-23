@@ -45,7 +45,7 @@ Run gateway synthetic SSE tests at the following maintained simultaneous-stream 
 - 1000 concurrent streams
 - 1500 concurrent streams
 - 2000 concurrent streams
-- 2500 concurrent streams
+- 2500 attempted streams (overload rejection only)
 
 ## Required Metrics
 
@@ -63,7 +63,7 @@ Run gateway synthetic SSE tests at the following maintained simultaneous-stream 
 
 ## Capacity Record and Approval Gate
 
-Production values are intentionally absent from `prod.bicepparam`. Before setting its required environment variables, record:
+Production values are intentionally absent from deployable defaults. Before setting protected OpenTofu inputs, record:
 
 | Input or result | Interactive | Subagents | Agent teams/batch | Evidence window |
 | --- | ---: | ---: | ---: | --- |
@@ -88,7 +88,7 @@ Do not run expensive end-to-end high-concurrency tests by default in CI.
 
 Gateway capacity is empirical: do not infer a supported SSE count by multiplying an undocumented connection figure by APIM units. Test every intended SKU, unit count, region, policy revision, payload distribution, `Ravg`, and `Rp95`; scale on sustained capacity/error/latency signals and repeat after changes.
 
-The current APIM classic/v2 service-limits table does not publish a concurrent backend-connection limit. Older support answers are not a sufficient production contract, so confirm the applicable limit with Microsoft for the selected Premium v2 deployment and prove sustained behavior before release. The 2,500-stream plateau is a synthetic gateway test target, not a claim that one Foundry backend authority supports 2,500 production streams.
+APIM v2 documents 2,048 concurrent backend connections per HTTP authority. Keep the evidence-derived aggregate admission limit below that ceiling and prove sustained behavior for the selected Premium v2 deployment. Units must not be multiplied into this limit.
 
 ## Foundry Quota Scope
 

@@ -1,6 +1,6 @@
 # Load testing
 
-The async client and backend use event-loop connections rather than one thread per stream. Maintained plateaus are 500, 1,000, 1,500, 2,000, and 2,500.
+The async client and backend use event-loop connections rather than one thread per stream. APIM v2 supports 2,048 concurrent backend connections per HTTP authority; configured admission must remain below that limit. The 2,500 target is an overload-rejection test, not a successful-stream target.
 
 ```bash
 python3 scripts/test/synthetic_sse_backend.py
@@ -15,3 +15,5 @@ The probe reports connection failures, timeouts, client disconnects, 429, 5xx, s
 Hold each plateau for at least representative p95 stream duration. Observe APIM and backend connections, capacity, TTFB, error rates, and Foundry quotas. Start with fixed capacity; test optional autoscale separately over its full control-loop duration. Gateway synthetic results do not prove Foundry capacity.
 
 CI runs only small local smoke concurrency. Direct Foundry URLs require `--allow-live-model`; billable live-model load requires explicit customer approval.
+
+Use repeated `--token-helper` values to exercise aggregate admission across identities. `--min-ok`, `--max-ok`, and `--require-429` turn the probe into a failing acceptance check.

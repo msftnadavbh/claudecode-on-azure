@@ -12,6 +12,7 @@ param defaultCapacity int
 param maximumCapacity int
 param scaleOutCpuThreshold int
 param scaleInCpuThreshold int
+param memoryAlertThreshold int
 param actionGroupResourceId string
 
 var useExistingTelemetry = !empty(existingWorkspaceResourceId) && !empty(existingAppInsightsResourceId)
@@ -238,12 +239,38 @@ resource capacityAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (inst
   }
 }]
 
+resource memoryAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (instance, i) in apimInstances: if (enabled) {
+  name: '${instance.name}-high-memory'
+  location: 'global'
+  properties: {
+    description: 'APIM gateway memory is sustained above the configured threshold.'
+    severity: 2
+    enabled: true
+    scopes: [apim[i].id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [{
+        name: 'HighMemory'
+        metricName: 'MemoryPercent_Gateway'
+        metricNamespace: 'Microsoft.ApiManagement/service'
+        operator: 'GreaterThan'
+        threshold: memoryAlertThreshold
+        timeAggregation: 'Average'
+        criterionType: 'StaticThresholdCriterion'
+      }]
+    }
+    actions: alertActions
+  }
+}]
+
 resource failureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (instance, i) in apimInstances: if (enabled) {
   name: '${instance.name}-gateway-errors'
   location: 'global'
   properties: {
-    description: 'APIM reports sustained failed gateway requests.'
-    severity: 1
+    description: 'APIM reports sustained authentication, authorization, or throttling responses.'
+    severity: 2
     enabled: true
     scopes: [
       apim[i].id
@@ -259,15 +286,12 @@ resource failureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (insta
           metricNamespace: 'Microsoft.ApiManagement/service'
           dimensions: [
             {
-              name: 'BackendResponseCode'
+              name: 'GatewayResponseCode'
               operator: 'Include'
               values: [
                 '401'
                 '403'
                 '429'
-                '500'
-                '502'
-                '503'
               ]
             }
           ]
@@ -277,6 +301,68 @@ resource failureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (insta
           criterionType: 'StaticThresholdCriterion'
         }
       ]
+    }
+    actions: alertActions
+  }
+}]
+
+resource gateway5xxAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (instance, i) in apimInstances: if (enabled) {
+  name: '${instance.name}-gateway-5xx'
+  location: 'global'
+  properties: {
+    description: 'APIM reports sustained client-visible gateway 5xx responses.'
+    severity: 1
+    enabled: true
+    scopes: [apim[i].id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [{
+        name: 'Gateway5xx'
+        metricName: 'Requests'
+        metricNamespace: 'Microsoft.ApiManagement/service'
+        dimensions: [{
+          name: 'GatewayResponseCodeCategory'
+          operator: 'Include'
+          values: ['5xx']
+        }]
+        operator: 'GreaterThan'
+        threshold: 5
+        timeAggregation: 'Total'
+        criterionType: 'StaticThresholdCriterion'
+      }]
+    }
+    actions: alertActions
+  }
+}]
+
+resource backend5xxAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [for (instance, i) in apimInstances: if (enabled) {
+  name: '${instance.name}-backend-5xx'
+  location: 'global'
+  properties: {
+    description: 'Foundry reports sustained backend 5xx responses through APIM.'
+    severity: 1
+    enabled: true
+    scopes: [apim[i].id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [{
+        name: 'Backend5xx'
+        metricName: 'Requests'
+        metricNamespace: 'Microsoft.ApiManagement/service'
+        dimensions: [{
+          name: 'BackendResponseCodeCategory'
+          operator: 'Include'
+          values: ['5xx']
+        }]
+        operator: 'GreaterThan'
+        threshold: 5
+        timeAggregation: 'Total'
+        criterionType: 'StaticThresholdCriterion'
+      }]
     }
     actions: alertActions
   }

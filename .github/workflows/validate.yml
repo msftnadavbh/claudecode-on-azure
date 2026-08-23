@@ -14,5 +14,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Validate shell, Python, policy, and Bicep
+      - name: Install OpenTofu
+        run: bash scripts/tofu/install.sh
+      - name: Validate OpenTofu
+        run: |
+          tofu -chdir=infra/tofu fmt -check
+          tofu -chdir=infra/tofu init -backend=false -input=false -lockfile=readonly
+          tofu -chdir=infra/tofu validate
+      - name: Validate shell, Python, policy, and Bicep rollback reference
         run: scripts/test/validate.sh
+      - name: Write CI evidence
+        if: always()
+        run: |
+          python3 - <<'PY' > "${RUNNER_TEMP}/ci-evidence.json"
+          import json, os
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "ref": os.environ["GITHUB_REF"], "repository": os.environ["GITHUB_REPOSITORY"], "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"], "run_id": os.environ["GITHUB_RUN_ID"]}, sort_keys=True))
+          PY
+      - name: Upload CI evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-evidence-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-evidence.json
+          if-no-files-found: error
+          retention-days: 90

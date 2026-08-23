@@ -1,0 +1,7 @@
+# Safe by design: this incomplete example cannot deploy. Supply required
+# resource IDs and organization-specific values through a secure var source.
+environment_profile = "prod"
+apim_sku_name       = "PremiumV2"
+zone_redundant      = true
+autoscale_enabled   = false
+networking_profile  = "public"

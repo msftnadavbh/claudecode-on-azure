@@ -2,7 +2,7 @@
 
 ## Identity boundaries
 
-- User tokens terminate at APIM and require the configured tenant, audience, app role, `tid`, and `oid`.
+- User tokens terminate at APIM and require the configured tenant, audience, `tid`, `oid`, and either the app role or the managed Desktop client's delegated scope.
 - User revocation is independent through Entra assignment/sign-in controls.
 - APIM removes `Authorization`, `x-api-key`, `api-key`, APIM subscription keys, function keys, and legacy credential query parameters.
 - APIM uses its managed identity for Foundry. `Foundry User` is the current documented minimum built-in role for Foundry project data actions and does not grant model deployment management.
