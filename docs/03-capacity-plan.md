@@ -75,7 +75,7 @@ Production values are intentionally absent from deployable defaults. Before sett
 | APIM units at acceptable capacity/error rate | measured | measured | measured | Synthetic SSE test |
 | Foundry quota pool and headroom | verified | verified | verified | Foundry quota page/export |
 
-Approve `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, and fixed `APIM_DEFAULT_CAPACITY` only after aggregate demand fits measured APIM capacity and the applicable Foundry quota with agreed operational headroom. Start fixed; enable optional autoscale only when sustained APIM utilization justifies its slow control loop. Recalculate after model/version, deployment type, policy, cache behavior, or worker-concurrency changes.
+Approve `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, concurrency admission, and fixed `APIM_DEFAULT_CAPACITY` only after aggregate demand fits measured APIM capacity and the applicable Foundry quota with agreed operational headroom. Recalculate after model/version, deployment type, policy, cache behavior, or worker-concurrency changes.
 
 ## Two Test Classes
 
@@ -88,7 +88,7 @@ Do not run expensive end-to-end high-concurrency tests by default in CI.
 
 Gateway capacity is empirical: do not infer a supported SSE count by multiplying an undocumented connection figure by APIM units. Test every intended SKU, unit count, region, policy revision, payload distribution, `Ravg`, and `Rp95`; scale on sustained capacity/error/latency signals and repeat after changes.
 
-APIM v2 documents 2,048 concurrent backend connections per HTTP authority. Keep the evidence-derived aggregate admission limit below that ceiling and prove sustained behavior for the selected Premium v2 deployment. Units must not be multiplied into this limit.
+APIM v2 documents 2,048 concurrent backend connections per HTTP authority. Concurrency admission is an approximate per-gateway limit: set explicit measured values below 2,048 and prove sustained behavior for the selected APIM v2 deployment. Units must not be multiplied into this limit.
 
 ## Foundry Quota Scope
 

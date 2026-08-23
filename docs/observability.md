@@ -6,14 +6,14 @@ The Application Insights logger uses the APIM system-assigned identity with `Mon
 
 Captured signals include region/resource, API operation, status/result class, gateway CPU and memory, gateway 401/403/429, gateway 5xx, and backend 5xx. Safe traces add APIM request ID plus validated tenant/user for incident investigation. No prompt, completion, source body, authorization header, API key, session ID, or agent ID is captured by APIM diagnostics.
 
-`ACTION_GROUP_RESOURCE_ID` is required for production. Alert thresholds are starting controls, not SLOs; tune from observed baselines.
+`ACTION_GROUP_RESOURCE_ID` is optional in this deployment because an enterprise monitoring layer may own incident routing. Production release still requires an approved and tested incident destination. Alert thresholds are starting controls, not SLOs; tune from observed baselines.
 
 - authentication/authorization failures;
 - rate/quota pressure and Foundry 429;
 - APIM/backend 5xx;
-- CPU/memory/capacity saturation and optional autoscale;
+- CPU/memory/capacity saturation;
 - optional Traffic Manager endpoint health;
-- circuit-open symptoms (clean 429/503 propagation);
+- 429 pass-through and 503 circuit-open symptoms after backend 5xx;
 - diagnostic ingestion delay/gaps.
 
 Application Insights or Log Analytics loss must not block inference. Detect ingestion gaps through external Azure Monitor health alerts and investigate diagnostic settings; do not enable payload logging as a workaround. Deploy per-region telemetry only as a customer compliance/data-residency overlay.

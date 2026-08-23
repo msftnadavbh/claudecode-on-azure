@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tofu"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import generate_import_manifest
 
 
@@ -39,9 +39,12 @@ class ImportManifestTests(unittest.TestCase):
 
     def test_single_region_minimal(self):
         manifest, shell = self.generate([])
-        self.assertEqual(len(manifest["imports"]), 22)
+        self.assertEqual(len(manifest["imports"]), 21)
         self.assertEqual(len(manifest["excluded"]), 1)
         self.assertIn('azapi_resource.apim["primary"]', {item["address"] for item in manifest["imports"]})
+        ids = {item["address"]: item["id"] for item in manifest["imports"]}
+        self.assertTrue(ids['azapi_resource.apim["primary"]'].endswith("?api-version=2025-03-01-preview"))
+        self.assertTrue(ids['azurerm_api_management_api.claude["primary"]'].endswith("/apis/claude;rev=1"))
         self.assertIn("tofu -chdir=infra/tofu import -input=false -var-file=reviewed.tfvars.json", shell)
         self.assertIn("azapi_resource.apim", shell)
         self.assertNotIn("azurerm_monitor_metric_alert", shell)
@@ -52,10 +55,10 @@ class ImportManifestTests(unittest.TestCase):
             "--secondary-foundry-role-assignment", GUIDS["secondary-foundry"],
             "--observability", "managed", "--workspace-name", "gateway-logs", "--app-insights-name", "gateway-insights",
             "--primary-monitoring-role-assignment", GUIDS["primary-monitoring"],
-            "--secondary-monitoring-role-assignment", GUIDS["secondary-monitoring"], "--autoscale",
+            "--secondary-monitoring-role-assignment", GUIDS["secondary-monitoring"],
             "--traffic-manager-name", "gateway-failover",
         ])
-        self.assertEqual(len(manifest["imports"]), 69)
+        self.assertEqual(len(manifest["imports"]), 65)
         self.assertEqual(sum("metric_alert" in item["address"] for item in manifest["imports"]), 10)
         addresses = {item["address"] for item in manifest["imports"]}
         self.assertIn('azurerm_monitor_metric_alert.cpu["primary"]', addresses)

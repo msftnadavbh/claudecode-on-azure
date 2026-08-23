@@ -12,7 +12,7 @@ python3 scripts/test/sse_concurrency_probe.py \
 
 The probe reports connection failures, timeouts, client disconnects, 429, 5xx, success, TTFB p50/p95/p99, and stream p95. Use `--synthetic-status`, `--initial-delay-ms`, and `--disconnect-after-events` for failure cases. Raise OS file-descriptor limits and distribute clients/backends when one host saturates; confirm generator CPU/network/event-loop lag before attributing a bottleneck to APIM.
 
-Hold each plateau for at least representative p95 stream duration. Observe APIM and backend connections, capacity, TTFB, error rates, and Foundry quotas. Start with fixed capacity; test optional autoscale separately over its full control-loop duration. Gateway synthetic results do not prove Foundry capacity.
+Hold each plateau for at least representative p95 stream duration. Observe APIM and backend connections, capacity, TTFB, error rates, and Foundry quotas. The supported baseline uses fixed measured capacity. Gateway synthetic results do not prove Foundry capacity.
 
 CI runs only small local smoke concurrency. Direct Foundry URLs require `--allow-live-model`; billable live-model load requires explicit customer approval.
 

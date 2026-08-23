@@ -1,6 +1,6 @@
 # Claude Code Runtime Guidance
 
-This repository uses generic Anthropic gateway mode because APIM, not the client, owns Foundry authentication.
+Claude Code is the primary supported client baseline. This repository uses generic Anthropic gateway mode because APIM, not the client, owns Foundry authentication. Claude Desktop is an optional preview only.
 
 ## Managed production settings
 

@@ -52,10 +52,11 @@ jobs:
           HAIKU_MODEL: ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
         run: |
           umask 077
+          endpoints=(--endpoint "primary=${APIM_PRIMARY_BASE_URL}")
+          [[ -z "${APIM_SECONDARY_BASE_URL}" ]] || endpoints+=(--endpoint "secondary=${APIM_SECONDARY_BASE_URL}")
+          [[ -z "${APIM_FAILOVER_BASE_URL}" ]] || endpoints+=(--endpoint "failover=${APIM_FAILOVER_BASE_URL}")
           python3 scripts/test/endpoint_smoke_matrix.py \
-            --endpoint "primary=${APIM_PRIMARY_BASE_URL}" \
-            --endpoint "secondary=${APIM_SECONDARY_BASE_URL}" \
-            --endpoint "failover=${APIM_FAILOVER_BASE_URL}" \
+            "${endpoints[@]}" \
             --token-helper "${GITHUB_WORKSPACE}/scripts/auth/apim-user-token-helper.sh" \
             --model "opus=${OPUS_MODEL}" \
             --model "sonnet=${SONNET_MODEL}" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate (but never execute) OpenTofu imports for the gateway topology."""
+"""Temporary migration helper: generate (but never execute) OpenTofu imports."""
 import argparse
 import json
 import re
@@ -23,7 +23,7 @@ NAMED_VALUES = (
     "entra-tenant-id", "expected-audience", "required-app-role",
     "claude-desktop-delegated-auth-enabled", "claude-desktop-client-id",
     "claude-desktop-delegated-scope", "per-user-rate-limit", "per-user-token-limit",
-    "per-user-concurrent-stream-limit", "aggregate-concurrent-stream-limit", "environment-profile",
+    "per-user-concurrent-stream-limit", "aggregate-concurrent-stream-limit",
 )
 ALERTS = {
     "high-capacity": "cpu",
@@ -127,28 +127,29 @@ def build(args):
 
     for region, apim_name, foundry_id, foundry_role in regions:
         apim_id = resource_id(args.subscription, args.resource_group, "Microsoft.ApiManagement", "service", apim_name)
-        add(f"{region}.apim", apim_id, f'azapi_resource.apim["{region}"]')
+        add(f"{region}.apim", f"{apim_id}?api-version=2025-03-01-preview", f'azapi_resource.apim["{region}"]')
         add(f"{region}.backend", f"{apim_id}/backends/foundry-backend", f'azurerm_api_management_backend.foundry["{region}"]')
         for name in NAMED_VALUES:
             slug = name.replace("-", "_")
             add(f"{region}.named_value.{name}", f"{apim_id}/namedValues/{name}",
                 f'azurerm_api_management_named_value.gateway["{region}/{name}"]')
         api_id = f"{apim_id}/apis/claude"
-        add(f"{region}.api", api_id, f'azurerm_api_management_api.claude["{region}"]')
-        add(f"{region}.api_policy", f"{api_id}/policies/policy", f'azurerm_api_management_api_policy.claude["{region}"]')
+        revisioned_api_id = f"{api_id};rev=1"
+        add(f"{region}.api", revisioned_api_id, f'azurerm_api_management_api.claude["{region}"]')
+        add(f"{region}.api_policy", revisioned_api_id, f'azurerm_api_management_api_policy.claude["{region}"]')
         for operation in ("messages", "count-tokens", "health"):
             slug = operation.replace("-", "_")
-            operation_id = f"{api_id}/operations/{operation}"
+            operation_id = f"{revisioned_api_id}/operations/{operation}"
             add(f"{region}.operation.{operation}", operation_id,
                 f'azurerm_api_management_api_operation.claude["{region}/{operation}"]')
-            add(f"{region}.operation_policy.{operation}", f"{operation_id}/policies/policy",
+            add(f"{region}.operation_policy.{operation}", operation_id,
                 f'azurerm_api_management_api_operation_policy.claude["{region}/{operation}"]')
         role_id = f"{foundry_id}/providers/Microsoft.Authorization/roleAssignments/{foundry_role}"
         add(f"{region}.foundry_role", role_id, f'azurerm_role_assignment.foundry_user["{region}"]')
         excluded.append({"id": foundry_id, "reason": "Existing Foundry account is externally owned; only its role assignment is managed."})
 
         if args.observability != "disabled":
-            add(f"{region}.logger", f"{apim_id}/loggers/application-insights",
+            add(f"{region}.logger", f"{apim_id}/loggers/application-insights?api-version=2024-05-01",
                 f'azapi_resource.application_insights_logger["{region}"]')
             add(f"{region}.api_diagnostic", f"{api_id}/diagnostics/applicationinsights",
                 f'azurerm_api_management_api_diagnostic.claude["{region}"]')
@@ -162,10 +163,6 @@ def build(args):
             for alert, resource_name in ALERTS.items():
                 add(f"{region}.alert.{alert}", resource_id(args.subscription, args.resource_group, "Microsoft.Insights", "metricAlerts", f"{apim_name}-{alert}"),
                     f'azurerm_monitor_metric_alert.{resource_name}["{region}"]')
-        if args.autoscale:
-            add(f"{region}.autoscale", resource_id(args.subscription, args.resource_group, "Microsoft.Insights", "autoscalesettings", f"{apim_name}-autoscale"),
-                f'azurerm_monitor_autoscale_setting.apim["{region}"]')
-
     if args.observability == "managed":
         add("observability.workspace", resource_id(args.subscription, args.resource_group, "Microsoft.OperationalInsights", "workspaces", args.workspace_name),
             'azurerm_log_analytics_workspace.shared["shared"]')
@@ -184,8 +181,8 @@ def build(args):
     if args.traffic_manager_name:
         profile_id = resource_id(args.subscription, args.resource_group, "Microsoft.Network", "trafficManagerProfiles", args.traffic_manager_name)
         add("traffic_manager.profile", profile_id, 'azurerm_traffic_manager_profile.failover["failover"]')
-        add("traffic_manager.primary", f"{profile_id}/externalEndpoints/primary", 'azurerm_traffic_manager_external_endpoint.apim["primary"]')
-        add("traffic_manager.secondary", f"{profile_id}/externalEndpoints/secondary", 'azurerm_traffic_manager_external_endpoint.apim["secondary"]')
+        add("traffic_manager.primary", f"{profile_id}/ExternalEndpoints/primary", 'azurerm_traffic_manager_external_endpoint.apim["primary"]')
+        add("traffic_manager.secondary", f"{profile_id}/ExternalEndpoints/secondary", 'azurerm_traffic_manager_external_endpoint.apim["secondary"]')
 
     imports.sort(key=lambda item: item["address"])
     excluded.sort(key=lambda item: item["id"])
@@ -212,7 +209,6 @@ def parser():
     result.add_argument("--action-group-id")
     result.add_argument("--primary-apim-subnet-id")
     result.add_argument("--secondary-apim-subnet-id")
-    result.add_argument("--autoscale", action="store_true")
     result.add_argument("--traffic-manager-name")
     result.add_argument("--address", action="append", default=[], metavar="KEY=ADDRESS")
     result.add_argument("--var-file", required=True, type=Path)

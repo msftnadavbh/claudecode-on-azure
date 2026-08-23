@@ -31,7 +31,7 @@ provider "azurerm" {
 # may be in a different subscription from the APIM resource group.
 provider "azurerm" {
   alias                           = "telemetry"
-  subscription_id                 = var.telemetry_subscription_id == "" ? null : var.telemetry_subscription_id
+  subscription_id                 = var.existing_app_insights_resource_id == "" ? null : split("/", var.existing_app_insights_resource_id)[2]
   resource_provider_registrations = "none"
   features {}
 }

@@ -1,7 +1,6 @@
 # Safe by design: this incomplete example cannot deploy. Supply required
 # resource IDs and organization-specific values through a secure var source.
-environment_profile = "prod"
-apim_sku_name       = "PremiumV2"
-zone_redundant      = true
-autoscale_enabled   = false
+apim_sku_name       = "StandardV2"
+default_capacity    = 1 # Replace with measured capacity.
+zone_redundant      = false
 networking_profile  = "public"

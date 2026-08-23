@@ -1,10 +1,7 @@
 # Safe by design: this incomplete example cannot deploy. Supply required
 # resource IDs and organization-specific values through a secure var source.
-environment_profile   = "poc"
 location              = "eastus"
-apim_sku_name         = "BasicV2"
-default_capacity      = 1
-minimum_capacity      = 1
-maximum_capacity      = 1
-autoscale_enabled     = false
+apim_sku_name         = "StandardV2"
+default_capacity      = 1 # Replace with measured capacity.
+zone_redundant        = false
 observability_enabled = false

@@ -36,9 +36,9 @@ def values():
     foundry_subscription = required("FOUNDRY_SUBSCRIPTION_ID")
     foundry_resource_group = required("FOUNDRY_RESOURCE_GROUP")
     foundry_account = required("FOUNDRY_ACCOUNT_NAME")
+    desktop_enabled = boolean("CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED")
     result = {
         "resource_group_name": required("AZURE_RESOURCE_GROUP"),
-        "environment_profile": profile,
         "location": required("AZURE_LOCATION"),
         "secondary_location": os.environ.get("AZURE_SECONDARY_LOCATION", ""),
         "apim_name": required("APIM_NAME"),
@@ -49,9 +49,7 @@ def values():
         "entra_tenant_id": required("ENTRA_TENANT_ID"),
         "expected_audience": required("APIM_EXPECTED_AUDIENCE"),
         "required_app_role": required("APIM_REQUIRED_APP_ROLE"),
-        "enable_claude_desktop_delegated_auth": boolean("CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED"),
-        "claude_desktop_client_id": os.environ.get("CLAUDE_DESKTOP_CLIENT_ID", "disabled"),
-        "claude_desktop_delegated_scope": os.environ.get("CLAUDE_DESKTOP_DELEGATED_SCOPE", "disabled"),
+        "enable_claude_desktop_delegated_auth": desktop_enabled,
         "foundry_base_url": required("FOUNDRY_BASE_URL"),
         "foundry_subscription_id": foundry_subscription,
         "foundry_resource_id": f"/subscriptions/{foundry_subscription}/resourceGroups/{foundry_resource_group}/providers/Microsoft.CognitiveServices/accounts/{foundry_account}",
@@ -62,23 +60,22 @@ def values():
         "per_user_token_limit": integer("PER_USER_TOKEN_LIMIT"),
         "per_user_concurrent_stream_limit": integer("PER_USER_CONCURRENT_STREAM_LIMIT"),
         "aggregate_concurrent_stream_limit": integer("AGGREGATE_CONCURRENT_STREAM_LIMIT"),
-        "apim_sku_name": "PremiumV2" if profile == "prod" else "BasicV2",
-        "default_capacity": integer("APIM_DEFAULT_CAPACITY", "2" if profile == "prod" else "1"),
-        "minimum_capacity": None if profile == "prod" else 1,
-        "maximum_capacity": None if profile == "prod" else 1,
-        "autoscale_enabled": False,
-        "zone_redundant": profile == "prod",
+        "apim_sku_name": os.environ.get("APIM_SKU", "StandardV2"),
+        "default_capacity": integer("APIM_DEFAULT_CAPACITY"),
+        "zone_redundant": boolean("APIM_ZONE_REDUNDANT"),
         "networking_profile": os.environ.get("APIM_NETWORKING_PROFILE", "public"),
         "apim_subnet_resource_id": os.environ.get("APIM_SUBNET_RESOURCE_ID", ""),
         "secondary_apim_subnet_resource_id": os.environ.get("APIM_SECONDARY_SUBNET_RESOURCE_ID", ""),
         "observability_enabled": profile == "prod",
         "existing_workspace_resource_id": os.environ.get("LOG_ANALYTICS_WORKSPACE_RESOURCE_ID", ""),
         "existing_app_insights_resource_id": os.environ.get("APPLICATION_INSIGHTS_RESOURCE_ID", ""),
-        "telemetry_subscription_id": os.environ.get("TELEMETRY_SUBSCRIPTION_ID", ""),
         "action_group_resource_id": os.environ.get("ACTION_GROUP_RESOURCE_ID", ""),
         "traffic_manager_enabled": boolean("TRAFFIC_MANAGER_ENABLED"),
         "traffic_manager_name": os.environ.get("TRAFFIC_MANAGER_NAME", ""),
     }
+    if desktop_enabled:
+        result["claude_desktop_client_id"] = required("CLAUDE_DESKTOP_CLIENT_ID")
+        result["claude_desktop_delegated_scope"] = required("CLAUDE_DESKTOP_DELEGATED_SCOPE")
     return result
 
 

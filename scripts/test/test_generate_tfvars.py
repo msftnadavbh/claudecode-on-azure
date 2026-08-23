@@ -31,8 +31,25 @@ class GenerateTfvarsTests(unittest.TestCase):
             generate_tfvars.main([str(path)])
             result = json.loads(path.read_text())
         self.assertEqual(result["default_capacity"], 2)
-        self.assertTrue(result["zone_redundant"])
+        self.assertEqual(result["apim_sku_name"], "StandardV2")
+        self.assertFalse(result["zone_redundant"])
+        self.assertFalse(result["enable_claude_desktop_delegated_auth"])
+        self.assertNotIn("claude_desktop_client_id", result)
+        self.assertNotIn("claude_desktop_delegated_scope", result)
         self.assertEqual(result["foundry_resource_id"], "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/foundry")
+
+    def test_uses_apim_runtime_inputs(self):
+        inputs = dict(ENV, APIM_SKU="PremiumV2", APIM_ZONE_REDUNDANT="true")
+        with patch.dict(os.environ, inputs, clear=True):
+            result = generate_tfvars.values()
+        self.assertEqual(result["apim_sku_name"], "PremiumV2")
+        self.assertTrue(result["zone_redundant"])
+
+    def test_desktop_inputs_are_required_only_when_enabled(self):
+        inputs = dict(ENV, CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED="true")
+        with patch.dict(os.environ, inputs, clear=True):
+            with self.assertRaisesRegex(ValueError, "CLAUDE_DESKTOP_CLIENT_ID must be set"):
+                generate_tfvars.values()
 
     def test_rejects_invalid_boolean(self):
         invalid = dict(ENV, DEPLOY_SECONDARY="yes")

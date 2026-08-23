@@ -15,7 +15,7 @@ The production baseline is one fixed-capacity APIM and one Foundry target. Optio
 2. APIM validates tenant, audience, `oid`, `tid`, and app role from the bearer `Authorization` header.
 3. APIM keys RPM and generation-token controls by `tid:oid`; token counting receives only RPM protection.
 4. APIM removes caller/provider credentials and keeps identity only in bounded gateway traces.
-5. APIM selects the configured backend entity. Its circuit opens after repeated 429/5xx responses and honors `Retry-After`; APIM does not replay inference POSTs.
+5. APIM selects the configured backend entity. As a starting safety rule, its circuit opens after 50 backend 5xx responses in one minute; 429 throttles pass to clients, and APIM does not retry or replay inference POSTs.
 6. APIM obtains its own Foundry token and streams the native response without buffering.
 
 Foundry accounts, model deployments, versions, deployment types, capacity, and networking are external customer resources. The template only creates APIM-owned resources and RBAC assignments.

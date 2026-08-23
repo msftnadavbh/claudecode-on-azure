@@ -20,68 +20,12 @@ resource "azurerm_role_assignment" "monitoring_metrics_publisher" {
   skip_service_principal_aad_check = true
 }
 
-resource "azurerm_monitor_autoscale_setting" "apim" {
-  for_each            = var.autoscale_enabled ? local.apim_instances : {}
-  name                = "${each.value.name}-autoscale"
-  resource_group_name = var.resource_group_name
-  location            = each.value.location
-  target_resource_id  = azapi_resource.apim[each.key].id
-  enabled             = true
-
-  profile {
-    name = "cpu-capacity"
-    capacity {
-      minimum = local.minimum_capacity
-      default = var.default_capacity
-      maximum = local.maximum_capacity
-    }
-
-    rule {
-      metric_trigger {
-        metric_name        = "CpuPercent_Gateway"
-        metric_resource_id = azapi_resource.apim[each.key].id
-        operator           = "GreaterThan"
-        statistic          = "Average"
-        threshold          = var.scale_out_cpu_threshold
-        time_aggregation   = "Average"
-        time_grain         = "PT1M"
-        time_window        = "PT30M"
-      }
-      scale_action {
-        cooldown  = "PT60M"
-        direction = "Increase"
-        type      = "ChangeCount"
-        value     = 1
-      }
-    }
-
-    rule {
-      metric_trigger {
-        metric_name        = "CpuPercent_Gateway"
-        metric_resource_id = azapi_resource.apim[each.key].id
-        operator           = "LessThan"
-        statistic          = "Average"
-        threshold          = var.scale_in_cpu_threshold
-        time_aggregation   = "Average"
-        time_grain         = "PT1M"
-        time_window        = "PT30M"
-      }
-      scale_action {
-        cooldown  = "PT90M"
-        direction = "Decrease"
-        type      = "ChangeCount"
-        value     = 1
-      }
-    }
-  }
-}
-
 resource "azurerm_monitor_metric_alert" "cpu" {
   for_each            = var.observability_enabled ? local.apim_instances : {}
   name                = "${each.value.name}-high-capacity"
   resource_group_name = var.resource_group_name
   scopes              = [azapi_resource.apim[each.key].id]
-  description         = "APIM gateway CPU capacity is sustained above the scale-out threshold."
+  description         = "APIM gateway CPU capacity is sustained above 70 percent."
   severity            = 2
   frequency           = "PT5M"
   window_size         = "PT15M"
@@ -91,7 +35,7 @@ resource "azurerm_monitor_metric_alert" "cpu" {
     metric_name      = "CpuPercent_Gateway"
     aggregation      = "Average"
     operator         = "GreaterThan"
-    threshold        = var.scale_out_cpu_threshold
+    threshold        = 70
   }
 
   dynamic "action" {

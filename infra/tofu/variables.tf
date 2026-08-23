@@ -8,16 +8,6 @@ variable "resource_group_name" {
   }
 }
 
-variable "environment_profile" {
-  type        = string
-  description = "Deployment profile."
-
-  validation {
-    condition     = contains(["poc", "prod"], var.environment_profile)
-    error_message = "environment_profile must be poc or prod."
-  }
-}
-
 variable "location" {
   type        = string
   description = "Primary Azure region."
@@ -223,23 +213,21 @@ variable "per_user_token_limit" {
 
 variable "per_user_concurrent_stream_limit" {
   type        = number
-  description = "Maximum concurrent forwarded requests per user identity."
-  default     = 2000
+  description = "Approximate maximum concurrent forwarded requests per user identity admitted by each APIM gateway."
 
   validation {
-    condition     = var.per_user_concurrent_stream_limit >= 1 && var.per_user_concurrent_stream_limit <= 2000
-    error_message = "per_user_concurrent_stream_limit must be between 1 and 2000."
+    condition     = var.per_user_concurrent_stream_limit >= 1
+    error_message = "per_user_concurrent_stream_limit must be at least one."
   }
 }
 
 variable "aggregate_concurrent_stream_limit" {
   type        = number
-  description = "Maximum concurrent forwarded requests to one Foundry authority."
-  default     = 2000
+  description = "Approximate maximum concurrent forwarded requests admitted by each APIM gateway."
 
   validation {
-    condition     = var.aggregate_concurrent_stream_limit >= 1 && var.aggregate_concurrent_stream_limit <= 2000
-    error_message = "aggregate_concurrent_stream_limit must be between 1 and 2000."
+    condition     = var.aggregate_concurrent_stream_limit >= 1 && var.aggregate_concurrent_stream_limit < 2048
+    error_message = "aggregate_concurrent_stream_limit must be between 1 and 2047."
   }
 }
 
@@ -260,56 +248,6 @@ variable "default_capacity" {
   validation {
     condition     = var.default_capacity >= 1
     error_message = "default_capacity must be at least one."
-  }
-}
-
-variable "minimum_capacity" {
-  type        = number
-  description = "Minimum warm APIM capacity."
-  default     = null
-
-  validation {
-    condition     = var.minimum_capacity == null || var.minimum_capacity >= 1
-    error_message = "minimum_capacity must be at least one."
-  }
-}
-
-variable "maximum_capacity" {
-  type        = number
-  description = "Maximum autoscale APIM capacity."
-  default     = null
-
-  validation {
-    condition     = var.maximum_capacity == null || var.maximum_capacity >= 1
-    error_message = "maximum_capacity must be at least one."
-  }
-}
-
-variable "autoscale_enabled" {
-  type        = bool
-  description = "Enable Azure Monitor autoscale for APIM instances."
-  default     = false
-}
-
-variable "scale_out_cpu_threshold" {
-  type        = number
-  description = "CPU percentage that scales out APIM."
-  default     = 70
-
-  validation {
-    condition     = var.scale_out_cpu_threshold >= 1 && var.scale_out_cpu_threshold <= 100
-    error_message = "scale_out_cpu_threshold must be between 1 and 100."
-  }
-}
-
-variable "scale_in_cpu_threshold" {
-  type        = number
-  description = "CPU percentage that scales in APIM."
-  default     = 30
-
-  validation {
-    condition     = var.scale_in_cpu_threshold >= 1 && var.scale_in_cpu_threshold <= 100
-    error_message = "scale_in_cpu_threshold must be between 1 and 100."
   }
 }
 
@@ -358,12 +296,11 @@ variable "existing_app_insights_resource_id" {
   type        = string
   description = "Existing shared Application Insights ID. Provide with existing_workspace_resource_id, or provide neither to create both."
   default     = ""
-}
 
-variable "telemetry_subscription_id" {
-  type        = string
-  description = "Subscription of existing Application Insights. Empty uses the deployment subscription."
-  default     = ""
+  validation {
+    condition     = var.existing_app_insights_resource_id == "" || can(regex("^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Insights/components/[^/]+$", var.existing_app_insights_resource_id))
+    error_message = "existing_app_insights_resource_id must be an Application Insights resource ID."
+  }
 }
 
 variable "action_group_resource_id" {
@@ -385,9 +322,8 @@ variable "memory_alert_threshold" {
 
 variable "traffic_manager_enabled" {
   type        = bool
-  description = "Deploy Traffic Manager priority routing. Null retains the Bicep default."
-  default     = null
-  nullable    = true
+  description = "Deploy optional public Traffic Manager priority routing."
+  default     = false
 }
 
 variable "traffic_manager_name" {

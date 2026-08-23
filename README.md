@@ -9,13 +9,13 @@ APIM validates each developer's Entra identity, applies per-user fairness contro
 ## Implemented
 
 - Generic Claude Code gateway mode with a refreshable Entra `apiKeyHelper`, no extra bearer-token cache, subprocess credential scrubbing, and independent Opus/Sonnet/Haiku deployment aliases.
-- Managed Claude Desktop configuration generation for Windows and macOS with native per-user Entra sign-in.
+- Optional preview Claude Desktop configuration generation for Windows and macOS with native per-user Entra sign-in.
 - Read-only Foundry account, deployment, and quota preflight for all three model roles.
 - Observer-only primary, secondary, failover, and private-network smoke evidence from protected in-network runners.
 - Cross-platform managed Claude Code settings generation and 90-day deployment evidence retention.
 - `/v1/messages` and `/v1/messages/count_tokens`, native headers/query passthrough, unbuffered SSE, credential stripping, and APIM backend circuit breaking without automatic POST retries.
-- Basic v2 PoC and a fixed-capacity, single-region Premium v2 production baseline; autoscale is optional.
-- Optional second APIM and public Traffic Manager failover, Premium v2 zone redundancy, and public/private networking profiles.
+- Fixed-capacity, public, single-region `StandardV2` baseline. `PremiumV2` is required only for zone redundancy or full VNet injection.
+- Optional second APIM and public Traffic Manager failover; private networking and zone redundancy remain explicit Premium v2 options.
 - Documented minimum `Foundry User` assignment on existing Foundry accounts; this repository does not manage Foundry accounts or deployments.
 - Shared Log Analytics and workspace-based Application Insights, zero-body APIM diagnostics, low-cardinality metrics/alerts, and safe identity traces.
 - OIDC OpenTofu plan/apply/smoke workflows and asynchronous 500–2,500 stream tooling.
@@ -35,10 +35,10 @@ tofu -chdir=infra/tofu plan -var-file=<reviewed.tfvars.json>
 
 1. Create the caller-facing Entra application, app role, and GitHub OIDC federated identities.
 2. Create/pin customer-owned Claude deployments and approve quotas.
-3. Configure the protected GitHub environment and external Azure Blob state backend described in [OpenTofu adoption](docs/tofu-adoption.md).
+3. Configure the protected GitHub environment and external Azure Blob state backend described in [temporary OpenTofu adoption](migration/tofu/tofu-adoption.md).
 4. Choose `public` or `private`. Private mode requires one dedicated Premium v2 VNet-injection subnet per APIM region and customer-managed DNS.
 5. Import existing resources, require a no-change plan, then dispatch `deploy`, review the sanitized OpenTofu plan summary, approve, apply, and inspect smoke evidence.
-6. Distribute managed Claude Code settings from [docs/client-authentication.md](docs/client-authentication.md).
+6. Distribute managed Claude Code settings from [docs/client-authentication.md](docs/client-authentication.md). Claude Desktop is an optional preview canary, not a production baseline.
 
 Production deliberately has no deployable defaults for tenant, Foundry, models, regions, capacity, networking, or alerts. See [docs/production-readiness.md](docs/production-readiness.md).
 

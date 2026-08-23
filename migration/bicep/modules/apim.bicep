@@ -127,7 +127,7 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = 
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: loadTextContent('../../apim/policies/claude-base.xml')
+    value: loadTextContent('../../../apim/policies/claude-base.xml')
   }
 }
 
@@ -137,14 +137,14 @@ var operations = [
     displayName: 'Create message'
     method: 'POST'
     urlTemplate: '/v1/messages'
-    policy: loadTextContent('../../apim/policies/claude-messages.xml')
+    policy: loadTextContent('../../../apim/policies/claude-messages.xml')
   }
   {
     name: 'count-tokens'
     displayName: 'Count message tokens'
     method: 'POST'
     urlTemplate: '/v1/messages/count_tokens'
-    policy: loadTextContent('../../apim/policies/claude-count-tokens.xml')
+    policy: loadTextContent('../../../apim/policies/claude-count-tokens.xml')
   }
 ]
 

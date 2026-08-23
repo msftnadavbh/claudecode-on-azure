@@ -12,8 +12,9 @@ Verified against first-party documentation on 2026-08-20:
 - Premium v2 zone redundancy is a creation-time `properties.zoneRedundant` setting in the current ARM preview schema; it does not use classic manual zone placement.
 - Premium v2 `Internal` VNet injection isolates inbound and outbound traffic at creation and uses one dedicated subnet per APIM instance.
 - `buffer-response="false"` is required for SSE; body logging stays at zero bytes.
-- Premium v2 is deployed as separate regional services because it does not provide classic Premium geo-replication.
-- Backend circuit breaking can propagate overload but must not blindly replay streaming POSTs.
+- Standard v2 supports the public, non-zone-redundant baseline. Premium v2 is required for availability zones or full VNet injection and is deployed as separate regional services because it does not provide classic Premium geo-replication.
+- Backend circuit breaking is approximate per gateway instance; the baseline trips only on sustained 5xx and never blindly replays streaming POSTs.
+- `limit-concurrency` is approximate per gateway instance and is an admission safety guard, not a globally precise semaphore.
 - Global Standard and Data Zone quota scopes differ; additional resources do not imply additional effective quota.
 
 References:

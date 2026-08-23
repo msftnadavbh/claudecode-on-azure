@@ -2,12 +2,10 @@ data "azurerm_client_config" "current" {}
 
 locals {
   resource_group_id                         = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"
-  minimum_capacity                          = coalesce(var.minimum_capacity, var.default_capacity)
-  maximum_capacity                          = coalesce(var.maximum_capacity, var.default_capacity)
   secondary_foundry_base_url                = var.secondary_foundry_base_url != "" ? var.secondary_foundry_base_url : var.foundry_base_url
   secondary_foundry_resource_id             = var.secondary_foundry_resource_id != "" ? var.secondary_foundry_resource_id : var.foundry_resource_id
   traffic_manager_name                      = var.traffic_manager_name != "" ? var.traffic_manager_name : "${var.apim_name}-failover"
-  deploy_traffic_manager                    = var.deploy_secondary && var.networking_profile == "public" && coalesce(var.traffic_manager_enabled, true)
+  deploy_traffic_manager                    = var.deploy_secondary && var.networking_profile == "public" && var.traffic_manager_enabled
   use_existing_telemetry                    = var.existing_workspace_resource_id != "" && var.existing_app_insights_resource_id != ""
   existing_app_insights_id_segments         = split("/", var.existing_app_insights_resource_id)
   existing_app_insights_resource_group_name = local.use_existing_telemetry ? local.existing_app_insights_id_segments[4] : null
@@ -45,7 +43,6 @@ locals {
     "per-user-token-limit"                  = tostring(var.per_user_token_limit)
     "per-user-concurrent-stream-limit"      = tostring(var.per_user_concurrent_stream_limit)
     "aggregate-concurrent-stream-limit"     = tostring(var.aggregate_concurrent_stream_limit)
-    "environment-profile"                   = var.environment_profile
   }
 
   operations = {
@@ -126,20 +123,28 @@ resource "azapi_resource" "apim" {
       error_message = "Private networking requires a subnet ID for every deployed APIM instance."
     }
     precondition {
-      condition     = local.minimum_capacity <= var.default_capacity && var.default_capacity <= local.maximum_capacity && (!var.zone_redundant || local.minimum_capacity >= 2)
-      error_message = "APIM capacities must be ordered, and zone-redundant capacity must be at least two units."
+      condition     = !var.zone_redundant || var.default_capacity >= 2
+      error_message = "Zone-redundant APIM requires at least two fixed capacity units."
     }
     precondition {
-      condition     = var.per_user_concurrent_stream_limit <= var.aggregate_concurrent_stream_limit
-      error_message = "Per-user concurrent streams cannot exceed the aggregate limit."
+      condition     = var.per_user_concurrent_stream_limit < var.aggregate_concurrent_stream_limit && var.aggregate_concurrent_stream_limit < 2048
+      error_message = "per_user_concurrent_stream_limit must be below aggregate_concurrent_stream_limit, which must be below the APIM v2 authority limit of 2048."
     }
     precondition {
       condition     = (var.existing_workspace_resource_id == "" && var.existing_app_insights_resource_id == "") || local.use_existing_telemetry
       error_message = "Provide both existing telemetry resource IDs, or neither."
     }
     precondition {
-      condition     = var.environment_profile != "prod" || var.action_group_resource_id != ""
-      error_message = "Production requires an existing Action Group resource ID."
+      condition     = var.networking_profile != "private" || var.apim_sku_name == "PremiumV2"
+      error_message = "Private networking is immutable at creation and requires PremiumV2."
+    }
+    precondition {
+      condition     = !var.zone_redundant || var.apim_sku_name == "PremiumV2"
+      error_message = "Zone redundancy is immutable at creation and requires PremiumV2."
+    }
+    precondition {
+      condition     = !var.enable_claude_desktop_delegated_auth || (var.claude_desktop_client_id != "" && var.claude_desktop_client_id != "disabled" && var.claude_desktop_delegated_scope != "" && var.claude_desktop_delegated_scope != "disabled")
+      error_message = "Claude Desktop delegated auth requires claude_desktop_client_id and claude_desktop_delegated_scope when enabled."
     }
   }
 }
@@ -153,24 +158,20 @@ resource "azurerm_api_management_backend" "foundry" {
   url                 = each.value.foundry_base_url
 
   circuit_breaker_rule {
-    name = "foundry-overload"
+    name = "foundry-5xx-50-per-minute"
 
+    # Break after 50 backend 5xx responses in one minute; client 429s are not backend faults.
     failure_condition {
-      count             = 3
+      count             = 50
       interval_duration = "PT1M"
 
-      status_code_range {
-        min = 429
-        max = 429
-      }
       status_code_range {
         min = 500
         max = 599
       }
     }
 
-    trip_duration              = "PT1M"
-    accept_retry_after_enabled = true
+    trip_duration = "PT1M"
   }
 
   depends_on = [azapi_resource.apim]

@@ -1,3 +1,4 @@
+// Deprecated, non-authoritative Bicep deployment reference. See README.md for removal gates.
 targetScope = 'resourceGroup'
 
 @allowed(['poc', 'prod'])

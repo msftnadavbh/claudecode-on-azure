@@ -4,18 +4,7 @@
 
 Use generic gateway mode. APIM exposes the native Anthropic protocol while Foundry is an internal backend. This keeps backend credentials and provider choice out of clients and provides documented `apiKeyHelper` refresh.
 
-```bash
-export APIM_BASE_URL=https://claude.example.com/claude
-export APIM_AUDIENCE=api://<gateway-application-id>
-export ANTHROPIC_DEFAULT_OPUS_MODEL=<pinned-opus-deployment>
-export ANTHROPIC_DEFAULT_SONNET_MODEL=<pinned-sonnet-deployment>
-export ANTHROPIC_DEFAULT_HAIKU_MODEL=<pinned-haiku-deployment>
-eval "$(scripts/auth/print-claude-env.sh prod)"
-```
-
-Configure `apiKeyHelper` in centrally managed Claude Code settings with the helper's absolute path.
-
-Generate platform-specific managed files from one policy with [Claude Code managed settings](claude-code-managed-settings.md). Device management owns installation and rollback; the repository never writes shell profiles or static credentials.
+Generate and deploy platform-specific managed files with [Claude Code managed settings](claude-code-managed-settings.md). This generator is the sole production Claude Code client-configuration path; device management owns installation and rollback. Do not use shell profiles or per-user environment setup.
 
 The helper prints only the raw Entra token. Claude Code uses helper output in both `Authorization: Bearer` and `x-api-key`; APIM validates `Authorization` and strips both headers before installing its own managed-identity authorization. Do not add a bearer prefix in the helper.
 
