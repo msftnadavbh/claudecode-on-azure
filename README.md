@@ -8,7 +8,7 @@ APIM validates each developer's Entra identity, applies per-user fairness contro
 
 ## Architecture
 
-![Claude Code Enterprise Gateway on Azure](assets/architecture/claude-code-enterprise-gateway.webp)
+![Claude Code Enterprise Gateway on Azure](assets/architecture/claude-code-enterprise-gateway.png)
 
 The production baseline is a fixed-capacity, public, single-region `StandardV2` APIM gateway. Claude Desktop, a secondary APIM with Traffic Manager, private networking, and availability zones are optional capabilities.
 
