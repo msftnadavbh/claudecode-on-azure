@@ -6,6 +6,12 @@ Deployable reference for 500+ developers using the native Anthropic Messages API
 
 APIM validates each developer's Entra identity, applies per-user fairness controls, removes caller credentials, and authenticates to Foundry with its managed identity. Production uses no shared gateway key and gives developers no APIM management-plane access.
 
+## Architecture
+
+![Claude Code Enterprise Gateway on Azure](assets/architecture/claude-code-enterprise-gateway.webp)
+
+The production baseline is a fixed-capacity, public, single-region `StandardV2` APIM gateway. Claude Desktop, a secondary APIM with Traffic Manager, private networking, and availability zones are optional capabilities.
+
 ## Implemented
 
 - Generic Claude Code gateway mode with a refreshable Entra `apiKeyHelper`, no extra bearer-token cache, subprocess credential scrubbing, and independent Opus/Sonnet/Haiku deployment aliases.
