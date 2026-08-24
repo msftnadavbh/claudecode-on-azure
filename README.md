@@ -1,81 +1,60 @@
-# Claude Code + APIM + Microsoft Foundry
+# Production Claude Code Gateway on Azure
 
-Deployable reference for 500+ developers using the native Anthropic Messages API:
+**Secure Claude Opus 5 access for 500+ developers through Azure API Management and Microsoft Foundry.**
 
-`Claude Code -> Azure API Management -> Microsoft Foundry -> customer-managed Claude deployments`
+This production-grade reference implementation gives engineering teams one governed Claude Code endpoint without shared API keys or direct Foundry credentials. Microsoft Entra authenticates every developer, APIM enforces identity-aware controls, and its managed identity calls customer-owned Claude deployments through the native Anthropic Messages API.
 
-APIM validates each developer's Entra identity, applies per-user fairness controls, removes caller credentials, and authenticates to Foundry with its managed identity. Production uses no shared gateway key and gives developers no APIM management-plane access.
+`Claude Code -> Microsoft Entra ID -> Azure API Management -> Microsoft Foundry -> Claude Opus 5`
 
 ## Architecture
 
 ![Claude Code Enterprise Gateway on Azure](assets/architecture/claude-code-enterprise-gateway.png)
 
-The production baseline is a fixed-capacity, public, single-region `StandardV2` APIM gateway. Claude Desktop, a secondary APIM with Traffic Manager, private networking, and availability zones are optional capabilities.
+The production baseline is one fixed-capacity, single-region `StandardV2` APIM gateway. `PremiumV2` adds private VNet injection and zone redundancy; an optional second APIM and Traffic Manager provide regional failover.
 
-## Implemented
+## Why it is production grade
 
-- Generic Claude Code gateway mode with a refreshable Entra `apiKeyHelper`, no extra bearer-token cache, subprocess credential scrubbing, and independent Opus/Sonnet/Haiku deployment aliases.
-- Optional preview Claude Desktop configuration generation for Windows and macOS with native per-user Entra sign-in.
-- Read-only Foundry account, deployment, and quota preflight for all three model roles.
-- Observer-only primary, secondary, failover, and private-network smoke evidence from protected in-network runners.
-- Cross-platform managed Claude Code settings generation and 90-day deployment evidence retention.
-- `/v1/messages` and `/v1/messages/count_tokens`, native headers/query passthrough, unbuffered SSE, credential stripping, and APIM backend circuit breaking without automatic POST retries.
-- Fixed-capacity, public, single-region `StandardV2` baseline. `PremiumV2` is required only for zone redundancy or full VNet injection.
-- Optional second APIM and public Traffic Manager failover; private networking and zone redundancy remain explicit Premium v2 options.
-- Documented minimum `Foundry User` assignment on existing Foundry accounts; this repository does not manage Foundry accounts or deployments.
-- Shared Log Analytics and workspace-based Application Insights, zero-body APIM diagnostics, low-cardinality metrics/alerts, and safe identity traces.
-- OIDC OpenTofu plan/apply/smoke workflows and asynchronous 500–2,500 stream tooling.
-- Manual, real-client Claude Code gateway canary with a bounded disposable edit/test check and optional refresh wait.
+| Capability | Implementation |
+| --- | --- |
+| Identity | Short-lived Entra tokens, tenant/audience/app-role validation, and independent user revocation |
+| Credential isolation | APIM strips caller credentials and uses its managed identity with least-privilege `Foundry User` access |
+| Governance | Per-user RPM, token, and concurrent-stream controls plus an aggregate admission limit |
+| Model routing | Independently pinned Opus, Sonnet, and Haiku deployment aliases, including customer-managed [`claude-opus-5`](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/claude-models) |
+| Streaming | Native `/v1/messages` and `/v1/messages/count_tokens` passthrough with unbuffered SSE responses |
+| Resilience | Backend circuit breaking without replaying inference POSTs; optional active/passive regional failover |
+| Observability | Application Insights, Log Analytics, low-cardinality alerts, safe identity traces, and zero-body diagnostics |
+| Delivery | OpenTofu, remote Azure Blob state, GitHub OIDC, reviewed plan/apply gates, smoke evidence, and rollback controls |
+| Scale | Capacity model and synthetic SSE tooling for sustained 500–2,000 streams and controlled overload at 2,500 |
 
-## PoC quick start
+## Production deployment
 
-`infra/tofu/poc.tfvars.example` is intentionally incomplete and cannot deploy. Supply environment-specific values through the protected deployment workflow; do not reuse PoC limits for production.
+1. Deploy and pin the required Claude models in Microsoft Foundry, including Opus 5, and approve the effective RPM/TPM quota.
+2. Create the caller-facing Entra application, GitHub OIDC identities, protected environments, and external Azure Blob state backend.
+3. Supply reviewed environment-specific inputs, import existing resources, and require a no-change adoption plan.
+4. Run the protected `deploy` workflow, approve the sanitized plan, inspect smoke evidence, and distribute centrally managed Claude Code settings.
 
-```bash
-scripts/test/validate.sh
-tofu -chdir=infra/tofu init -backend-config=... -lockfile=readonly
-tofu -chdir=infra/tofu plan -var-file=<reviewed.tfvars.json>
-```
+Start with the [production readiness gates](docs/production-readiness.md), [client authentication guide](docs/client-authentication.md), and [OpenTofu adoption runbook](migration/tofu/tofu-adoption.md).
 
-## Production reference deployment
-
-1. Create the caller-facing Entra application, app role, and GitHub OIDC federated identities.
-2. Create/pin customer-owned Claude deployments and approve quotas.
-3. Configure the protected GitHub environment and external Azure Blob state backend described in [temporary OpenTofu adoption](migration/tofu/tofu-adoption.md).
-4. Choose `public` or `private`. Private mode requires one dedicated Premium v2 VNet-injection subnet per APIM region and customer-managed DNS.
-5. Import existing resources, require a no-change plan, then dispatch `deploy`, review the sanitized OpenTofu plan summary, approve, apply, and inspect smoke evidence.
-6. Distribute managed Claude Code settings from [docs/client-authentication.md](docs/client-authentication.md). Claude Desktop is an optional preview canary, not a production baseline.
-
-Production deliberately has no deployable defaults for tenant, Foundry, models, regions, capacity, networking, or alerts. See [docs/production-readiness.md](docs/production-readiness.md).
-
-## Validation and load test
-
-Validation requires Bash, ShellCheck, Python 3.11+, OpenTofu 1.12.3, and Bicep CLI (temporarily, for rollback-reference compilation).
+## Validate
 
 ```bash
 scripts/test/validate.sh
+
 python3 scripts/test/synthetic_sse_backend.py
 python3 scripts/test/sse_concurrency_probe.py \
   --url http://127.0.0.1:8088/v1/messages \
-  --concurrency 500 --stream-duration 60
+  --concurrency 500 \
+  --stream-duration 60
 ```
 
-Direct Foundry load targets require `--allow-live-model`; billable model load is never run by CI.
+Direct Foundry load tests are billable and require the explicit `--allow-live-model` flag.
+
+> [!IMPORTANT]
+> The repository implements the production controls; each deployment must still prove its own Opus 5 quota, APIM capacity, SLOs, alerting, failover, and rollback before a 500+ developer rollout. Foundry accounts, model deployments, production sizing, regions, and network topology remain customer-owned inputs.
 
 ## Documentation
 
-- [Architecture](docs/01-architecture.md)
-- [Security](docs/security.md)
-- [Client authentication](docs/client-authentication.md)
-- [Claude Desktop](docs/desktop-deployment.md)
-- [Foundry preflight](docs/foundry-preflight.md)
-- [Claude Code managed settings](docs/claude-code-managed-settings.md)
-- [Claude Code live canary](docs/claude-code-canary.md)
-- [Capacity](docs/03-capacity-plan.md)
-- [Availability and DR](docs/availability-dr.md)
-- [Networking](docs/networking.md)
-- [Observability](docs/observability.md)
-- [Load testing](docs/load-testing.md)
-- [Operations and rollback](docs/operations-runbook.md)
-- [Production readiness](docs/production-readiness.md)
-- [Complexity reduction plan](docs/complexity-reduction-plan.md)
+- **Design:** [Architecture](docs/01-architecture.md) · [Security](docs/security.md) · [Capacity](docs/03-capacity-plan.md) · [Availability and DR](docs/availability-dr.md) · [Networking](docs/networking.md)
+- **Operate:** [Observability](docs/observability.md) · [Load testing](docs/load-testing.md) · [Operations and rollback](docs/operations-runbook.md) · [Production readiness](docs/production-readiness.md)
+- **Clients:** [Authentication](docs/client-authentication.md) · [Managed settings](docs/claude-code-managed-settings.md) · [Live canary](docs/claude-code-canary.md) · [Claude Desktop preview](docs/desktop-deployment.md)
+- **Deploy:** [Foundry preflight](docs/foundry-preflight.md) · [OpenTofu adoption](migration/tofu/tofu-adoption.md)
