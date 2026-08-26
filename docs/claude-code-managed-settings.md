@@ -1,6 +1,6 @@
-# Claude Code managed settings
+# Managed Claude Code settings
 
-This generator is the sole production Claude Code client-configuration path. Generate, but do not install, the non-secret terminal configuration:
+**Purpose:** generate non-secret, platform-specific Claude Code configuration for device management. **Prerequisites:** gateway URL, Entra audience, three Foundry deployment names, and managed helper paths. **Boundary:** generation writes files only; device management owns install, permissions, version pinning, update, and rollback. A native Windows helper is customer-provided.
 
 ```bash
 python3 scripts/claude_code/generate_managed_settings.py \
@@ -9,20 +9,18 @@ python3 scripts/claude_code/generate_managed_settings.py \
   --macos-helper-path "/Library/Company/Claude/apim-user-token-helper.sh" \
   --linux-helper-path /opt/company/claude/apim-user-token-helper.sh \
   --windows-helper-path 'C:\Program Files\Company\Claude\apim-user-token-helper.exe' \
-  --opus-model opus-pinned --sonnet-model sonnet-pinned --haiku-model haiku-pinned \
+  --opus-model opus-deployment --sonnet-model sonnet-deployment --haiku-model haiku-deployment \
   --output-dir out/claude-code
 ```
 
-Deploy the generated UTF-8 `managed-settings.json` with device management to:
+Deploy the generated file through the organization’s management system:
 
-| Platform | Generated artifact | Managed location |
-| --- | --- | --- |
-| macOS | `macos/managed-settings.json` | `/Library/Application Support/ClaudeCode/managed-settings.json` |
-| Linux/WSL | `linux/managed-settings.json` | `/etc/claude-code/managed-settings.json` |
-| Windows | `windows/managed-settings.json` | `C:\Program Files\ClaudeCode\managed-settings.json` |
+| Platform | Managed location |
+| --- | --- |
+| macOS | `/Library/Application Support/ClaudeCode/managed-settings.json` |
+| Linux/WSL | `/etc/claude-code/managed-settings.json` |
+| Windows | `C:\Program Files\ClaudeCode\managed-settings.json` |
 
-The files use generic `ANTHROPIC_BASE_URL` gateway mode, each platform's dynamic `apiKeyHelper`, its five-minute TTL, subprocess environment scrubbing, pinned models, and disabled nonessential traffic. The helper's dynamic credential bypasses the initial login prompt; do not set `forceLoginMethod`, because current Claude Code guidance says it conflicts with `apiKeyHelper`. No static token, API key, Foundry-native setting, shell profile, or per-user environment setup is generated.
+The files configure generic gateway mode, a five-minute helper cache, subprocess environment scrubbing, and deployment-name defaults. They do not contain a token, API key, Foundry-native setting, or user shell-profile configuration.
 
-The bundled `scripts/auth/apim-user-token-helper.sh` is for macOS, Linux, and WSL only. Native Windows requires a customer-provided, pilot-tested executable helper; this repository provides no Windows helper.
-
-Rollback: redeploy the previous managed file and helper with the same MDM/GPO tool, then restart Claude Code. Do not remove the managed file as a recovery mechanism; that can return the client to unmanaged or direct-provider settings.
+The bundled `scripts/auth/apim-user-token-helper.sh` is for macOS/Linux/WSL. Pilot the customer native Windows helper before any Windows rollout. Roll back by redeploying the prior settings and helper, then restarting Claude Code; do not remove management as a recovery shortcut.

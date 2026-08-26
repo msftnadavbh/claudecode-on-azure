@@ -1,9 +1,16 @@
-# Migration from PoC
+# Migration and adoption
 
-1. Keep the Basic v2 PoC isolated and preserve its tiny demonstration limits.
-2. Provision production Entra applications, GitHub OIDC identities/environments, networks, DNS, monitoring destinations, and customer-owned pinned Foundry deployments.
-3. Deploy the public single-region `StandardV2` baseline and RBAC through the protected OpenTofu workflow; add a secondary only when HA requires it.
-4. Validate public/private connectivity, both native routes, managed-identity auth, token refresh past one lifetime, throttling isolation, and enabled failover.
-5. Load-test APIM synthetically, approve Foundry quota separately, and set measured fixed capacity and user limits.
-6. Distribute generated managed Claude Code settings to Windows, macOS, and Linux canaries, verify their artifact digests and live canaries, then expand while monitoring auth, 429, errors, capacity, and model aliases. Run the optional Claude Desktop preview canary only when enabling that path.
-7. Remove legacy shared gateway credentials after rollback windows expire.
+**Purpose:** choose a safe path for a new APIM deployment or adoption of an existing one. **Prerequisites:** customer owners for Foundry, Entra, state, networking, and change approval. **Boundary:** OpenTofu is the active deployment path.
+
+## New APIM deployment
+
+1. Prepare customer-owned Foundry deployments, Entra app/roles, GitHub OIDC/environments, Blob state, resource group, and selected networking.
+2. Start with public, single-region `StandardV2` unless private injection or zone redundancy requires `PremiumV2`.
+3. Configure [GitHub variables and secrets](github-configuration.md), run [Foundry preflight](foundry-preflight.md), and review the protected plan.
+4. Deploy, run the applicable smoke evidence, pilot managed clients, then approve capacity and operational gates.
+
+## Existing-resource adoption
+
+Use the [OpenTofu adoption runbook](../migration/tofu/tofu-adoption.md). Its import manifest is a starting inventory, not proof of complete import coverage. Manually compare every current managed address and Azure object, resolve all existing model named values before apply, import deliberately, and require a no-change plan. Do not use new-deployment defaults to retier a live APIM resource.
+
+Expand clients only after client canaries, measured limits, alerting, rollback review, and any selected private/HA evidence pass.

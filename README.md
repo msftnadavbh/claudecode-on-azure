@@ -1,71 +1,47 @@
-# Production Claude Code Gateway on Azure
+# Claude Code Enterprise Gateway on Azure
 
-**Secure Claude Code access for 500+ developers through Azure API Management and Microsoft Foundry.**
+Deploy a governed Claude Code gateway for customer validation: Microsoft Entra authenticates callers, Azure API Management (APIM) applies gateway controls, and APIM's managed identity calls customer-owned Microsoft Foundry Claude deployments. Clients use the native Anthropic Messages API without direct Foundry credentials.
 
-This production-grade reference implementation gives engineering teams one governed Claude Code endpoint without shared API keys or direct Foundry credentials. Microsoft Entra authenticates every developer, APIM enforces identity-aware controls, and its managed identity calls customer-owned Claude deployments through the native Anthropic Messages API.
+For platform and security teams validating a managed Claude Code rollout—not a claim that a particular topology, capacity, or fleet size is already proven in production.
 
-`Claude Code -> Microsoft Entra ID -> Azure API Management -> Microsoft Foundry -> customer-managed Claude models`
+## What this deploys
 
-## Architecture
+- `/claude` on APIM, with native `/v1/messages` and `/v1/messages/count_tokens`, unbuffered SSE, and APIM-local unauthenticated `/health`.
+- A fixed-capacity, public, single-region `StandardV2` APIM baseline. Use `PremiumV2` only for zone redundancy or private VNet injection.
+- Optional second APIM and public Traffic Manager. Private DNS, failover, custom DNS, and certificates remain customer-owned.
+- APIM policy, managed identity access to Foundry, optional telemetry and alerts, and managed Claude Code configuration generators.
 
-![Claude Code Enterprise Gateway on Azure](assets/architecture/claude-code-enterprise-gateway.png)
+![Conceptual Claude Code Enterprise Gateway on Azure architecture. The written implementation boundary below is authoritative.](assets/architecture/claude-code-enterprise-gateway.png)
 
-The production baseline is one fixed-capacity, single-region `StandardV2` APIM gateway. `PremiumV2` adds private VNet injection and zone redundancy; an optional second APIM and Traffic Manager provide regional failover.
+`Claude Code → Microsoft Entra ID → Azure API Management → Microsoft Foundry → customer-managed Claude deployments`
 
-## Why it is production grade
+## Customer prerequisites
 
-| Capability | Implementation |
-| --- | --- |
-| Identity | Short-lived Entra tokens, tenant/audience/app-role validation, and independent user revocation |
-| Credential isolation | APIM strips caller credentials and uses its managed identity with least-privilege `Foundry User` access |
-| Governance | Per-user RPM, token, and concurrent-stream controls plus an aggregate admission limit |
-| Model routing | Independently pinned deployment aliases backed by customer-managed Claude models in Foundry |
-| Streaming | Native `/v1/messages` and `/v1/messages/count_tokens` passthrough with unbuffered SSE responses |
-| Resilience | Backend circuit breaking without replaying inference POSTs; optional active/passive regional failover |
-| Observability | Application Insights, Log Analytics, low-cardinality alerts, safe identity traces, and zero-body diagnostics |
-| Delivery | OpenTofu, remote Azure Blob state, GitHub OIDC, reviewed plan/apply gates, smoke evidence, and rollback controls |
-| Scale | Capacity model and synthetic SSE tooling for sustained 500–2,000 streams and controlled overload at 2,500 |
+Before deployment, provide the customer-owned resources and decisions: Foundry account and three pinned deployment names; Entra app registration and assignments; GitHub identities, protected environments, and OIDC federation; a resource group and external Azure Blob state; and, where selected, subnets, DNS, certificates, Foundry private endpoints, telemetry destinations, and a native Windows helper. This repository does not create them.
 
-## Production deployment
+## Supported baseline
 
-1. Deploy and pin the required Claude models in Microsoft Foundry and approve the effective RPM/TPM quota.
-2. Create the caller-facing Entra application, GitHub OIDC identities, protected environments, and external Azure Blob state backend.
-3. Supply reviewed environment-specific inputs, import existing resources, and require a no-change adoption plan.
-4. Run the protected `deploy` workflow, approve the sanitized plan, inspect smoke evidence, and distribute centrally managed Claude Code settings.
+OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.7.0`. Three configured Foundry deployment names are allowlisted by APIM; a secondary Foundry account, when used, must expose the same names. Claude Code is supported through the bundled helper on macOS, Linux, and WSL; native Windows requires a customer helper. Claude Desktop is an optional preview.
 
-Start with the [production readiness gates](docs/production-readiness.md), [client authentication guide](docs/client-authentication.md), and [OpenTofu adoption runbook](migration/tofu/tofu-adoption.md).
+## Customer journey
 
-## Validate
+1. Choose the [topology and prerequisites](docs/getting-started.md).
+2. Configure [GitHub environments, OIDC, state, and inputs](docs/github-configuration.md).
+3. Run [Foundry preflight](docs/foundry-preflight.md), validate, dispatch the protected workflow, and complete the applicable smoke test.
+4. Pilot managed Claude Code clients, then approve capacity, operations, and release gates.
 
-Requires Bash with standard command-line utilities, Python 3, ShellCheck, and OpenTofu.
+## Validation boundary
+
+Repository validation checks configuration and local tools; it does not prove your Foundry quota, APIM capacity, private connectivity, SLOs, failover, or client fleet. The [production readiness gates](docs/production-readiness.md) define the customer evidence required before rollout.
+
+## Documentation
+
+Start at the [documentation index](docs/index.md) for lifecycle and role-based guidance. For operational symptoms, see [troubleshooting](docs/troubleshooting.md).
+
+## Validate the repository
+
+Requires Bash, Python 3, ShellCheck, and OpenTofu.
 
 ```bash
 scripts/test/validate.sh
 ```
-
-In a separate terminal, run the synthetic backend:
-
-```bash
-python3 scripts/test/synthetic_sse_backend.py
-```
-
-Then run the probe:
-
-```bash
-python3 scripts/test/sse_concurrency_probe.py \
-  --url http://127.0.0.1:8088/v1/messages \
-  --concurrency 500 \
-  --stream-duration 60
-```
-
-Direct Foundry load tests are billable and require the explicit `--allow-live-model` flag.
-
-> [!IMPORTANT]
-> The repository implements the production controls; each deployment must still prove its own model quota, APIM capacity, SLOs, alerting, failover, and rollback before a 500+ developer rollout. Foundry accounts, model deployments, production sizing, regions, and network topology remain customer-owned inputs.
-
-## Documentation
-
-- **Design:** [Architecture](docs/01-architecture.md) · [Security](docs/security.md) · [Capacity](docs/03-capacity-plan.md) · [Availability and DR](docs/availability-dr.md) · [Networking](docs/networking.md)
-- **Operate:** [Observability](docs/observability.md) · [Load testing](docs/load-testing.md) · [Operations and rollback](docs/operations-runbook.md) · [Production readiness](docs/production-readiness.md)
-- **Clients:** [Authentication](docs/client-authentication.md) · [Managed settings](docs/claude-code-managed-settings.md) · [Live canary](docs/claude-code-canary.md) · [Claude Desktop preview](docs/desktop-deployment.md)
-- **Deploy:** [Foundry preflight](docs/foundry-preflight.md) · [OpenTofu adoption](migration/tofu/tofu-adoption.md)

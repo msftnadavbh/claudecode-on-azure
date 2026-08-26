@@ -1,6 +1,6 @@
-# Temporary OpenTofu import adoption assets
+# OpenTofu existing-resource adoption
 
-> **Temporary migration asset.** This is not steady-state operational tooling. Remove `migration/tofu` only after PoC and production imports, two zero-change plans, the first successful OpenTofu apply, and a rollback rehearsal.
+**Purpose:** adopt existing resources into the active OpenTofu deployment path. **Prerequisites:** reviewed tfvars, pre-created remote state, complete Azure resource inventory, and change approval. **Boundary:** the generated import manifest is a review aid, not proof of complete import coverage; OpenTofu is the only active deployment path.
 
 ## Remote-state bootstrap prerequisites
 
@@ -25,7 +25,7 @@ python3 migration/tofu/generate_import_manifest.py \
 
 For secondary topology add `--secondary-apim`, its Foundry account ID and role-assignment GUID, and `--secondary-monitoring-role-assignment`; add `--traffic-manager-name` for Traffic Manager. Use `--observability external --workspace-id ... --app-insights-id ...` for shared telemetry; those two resources are recorded as excluded rather than imported. Pass existing `--action-group-id` and APIM integration `--primary-apim-subnet-id` (and `--secondary-apim-subnet-id`) so they are explicitly recorded as external too.
 
-The manifest includes APIM and every current APIM child resource, managed Foundry and monitoring role assignments, managed telemetry, diagnostics, five alerts per APIM, and optional Traffic Manager resources. Existing Foundry accounts and external telemetry are explicitly excluded. Match `--observability` to the exact configuration before importing; omitted managed resources will otherwise appear as creates.
+The manifest covers its currently generated APIM child resources, managed Foundry/monitoring role assignments, managed telemetry, diagnostics, alerts, and optional Traffic Manager resources. Existing Foundry accounts and external telemetry are excluded. Manually review all currently managed OpenTofu addresses and actual Azure objects; do not claim the manifest covers everything. Match `--observability` to the exact configuration before importing; omitted managed resources can appear as creates.
 
 ## Runtime baseline
 
@@ -35,4 +35,4 @@ Concurrency limits are required and are approximate admission limits per APIM ga
 
 Default addresses match `infra/tofu`. If the configuration is intentionally refactored, pass `--address KEY=ADDRESS` before reviewing and manually running the generated commands. Keys are the dotted resource names in the JSON manifest.
 
-Review the JSON, tfvars, and generated shell file; run `tofu init` with the pre-created remote backend, then run commands one at a time from the repository root. Do not import the same Azure object at more than one address. After every import batch, require a plan with no unapproved create, update, replace, or delete action.
+Review the JSON, tfvars, and generated shell file; resolve every existing model named value before apply; run `tofu init` with the pre-created remote backend, then run commands one at a time from the repository root. Do not import the same Azure object at more than one address. After every import batch, require a no-change plan; investigate every create, update, replace, or delete action before proceeding.

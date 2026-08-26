@@ -1,34 +1,23 @@
-# Verified platform constraints
+# Platform constraints
 
-Verified against first-party documentation on 2026-08-20:
+**Purpose:** record the service limits that shape this implementation. **Prerequisites:** validate current service availability, quota, and SKU support in the selected customer region. **Boundary:** documented constraints do not guarantee customer capacity or eligibility.
 
-- Generic gateway mode uses `ANTHROPIC_BASE_URL`; `apiKeyHelper` supplies the dynamic gateway credential.
-- `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` strips Anthropic/cloud credentials from child environments but is not host-process isolation.
-- Foundry deployment names, not marketing model aliases, are configured for Opus/Sonnet/Haiku.
-- Foundry Claude Entra authentication uses scope `https://ai.azure.com/.default`; APIM therefore requests its managed-identity token with resource `https://ai.azure.com`.
-- Anthropic support in APIM LLM policies requires a v2 tier, so PoC uses Basic v2.
-- APIM is not a supported Traffic Manager Azure Endpoint resource type; public failover uses External Endpoints targeting APIM gateway FQDNs.
-- APIM v2 scaling and alerting use `CpuPercent_Gateway`; the classic `Capacity` metric is unsupported for v2 tiers.
-- Premium v2 zone redundancy is a creation-time `properties.zoneRedundant` setting in the current ARM preview schema; it does not use classic manual zone placement.
-- Premium v2 `Internal` VNet injection isolates inbound and outbound traffic at creation and uses one dedicated subnet per APIM instance.
-- `buffer-response="false"` is required for SSE; body logging stays at zero bytes.
-- Standard v2 supports the public, non-zone-redundant baseline. Premium v2 is required for availability zones or full VNet injection and is deployed as separate regional services because it does not provide classic Premium geo-replication.
-- Backend circuit breaking is approximate per gateway instance; the baseline trips only on sustained 5xx and never blindly replays streaming POSTs.
-- `limit-concurrency` is approximate per gateway instance and is an admission safety guard, not a globally precise semaphore.
-- Global Standard and Data Zone quota scopes differ; additional resources do not imply additional effective quota.
+| Constraint | Implemented consequence |
+| --- | --- |
+| Claude Code gateway mode uses `ANTHROPIC_BASE_URL` and `apiKeyHelper` | Managed clients use a dynamic Entra token helper, not a static key. |
+| Foundry uses deployment names | APIM allowlists three customer-selected deployment names rather than marketing model labels. |
+| SSE requires unbuffered responses | APIM forwards streaming responses with buffering disabled and diagnostics capture zero body bytes. |
+| APIM v2 connection authority ceiling is 2,048 | Aggregate concurrent admission is configured below 2,048 per gateway; it is approximate, not global. |
+| StandardV2 is public/non-zone-redundant | The baseline uses StandardV2; PremiumV2 is required for private VNet injection or zone redundancy. |
+| APIM is not a Traffic Manager Azure Endpoint | Optional public Traffic Manager uses external APIM FQDN endpoints. |
+| Foundry quota scope varies | A second resource or region does not automatically add effective quota. |
 
-References:
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` reduces credential exposure to child processes but is not same-user process isolation. APIM circuit breaking is gateway-instance-local and only responds to backend 5xx; it does not retry streaming POSTs.
 
-- [Claude Code on Microsoft Foundry](https://code.claude.com/docs/en/microsoft-foundry)
+Use [capacity and load](03-capacity-plan.md) for customer measurement and [networking](networking.md) for topology constraints. Recheck the current first-party guidance before regional deployment:
+
 - [Connect Claude Code to an LLM gateway](https://code.claude.com/docs/en/llm-gateway-connect)
-- [Claude Code environment variables](https://code.claude.com/docs/en/env-vars)
-- [Foundry authentication and authorization](https://learn.microsoft.com/azure/foundry/concepts/authentication-authorization-foundry)
-- [Use Claude models in Foundry](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/use-foundry-models-claude)
-- [APIM LLM token limit](https://learn.microsoft.com/azure/api-management/llm-token-limit-policy)
-- [APIM v2 tiers](https://learn.microsoft.com/azure/api-management/v2-service-tiers-overview)
-- [Enable APIM availability zones](https://learn.microsoft.com/azure/api-management/enable-availability-zone-support)
-- [Inject Premium v2 APIM into a VNet](https://learn.microsoft.com/azure/api-management/inject-vnet-v2)
-- [Traffic Manager endpoint types](https://learn.microsoft.com/azure/traffic-manager/traffic-manager-endpoint-types)
-- [APIM capacity metrics](https://learn.microsoft.com/azure/api-management/api-management-capacity)
-- [APIM backends](https://learn.microsoft.com/azure/api-management/backends)
-- [APIM SSE](https://learn.microsoft.com/azure/api-management/how-to-server-sent-events)
+- [Claude models in Microsoft Foundry](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/use-foundry-models-claude)
+- [APIM v2 service tiers](https://learn.microsoft.com/azure/api-management/v2-service-tiers-overview)
+- [APIM Premium v2 VNet injection](https://learn.microsoft.com/azure/api-management/inject-vnet-v2)
+- [Server-sent events through APIM](https://learn.microsoft.com/azure/api-management/how-to-server-sent-events)

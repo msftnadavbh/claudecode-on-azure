@@ -1,21 +1,16 @@
 # Security
 
-## Identity boundaries
+**Purpose:** describe the gateway's identity and telemetry controls. **Prerequisites:** customer-owned Entra application/assignments and Foundry security review. **Boundary:** this repository does not create Entra registrations or enforce Foundry `disableLocalAuth`, remove other Foundry RBAC, or secure customer workstations.
 
-- User tokens terminate at APIM and require the configured tenant, audience, `tid`, `oid`, and either the app role or the optional preview Desktop client's exact delegated scope.
-- User revocation is independent through Entra assignment/sign-in controls.
-- APIM removes `Authorization`, `x-api-key`, `api-key`, APIM subscription keys, function keys, and legacy credential query parameters.
-- APIM uses its managed identity for Foundry. `Foundry User` is the current documented minimum built-in role for Foundry project data actions and does not grant model deployment management.
-- No shared production key or developer management-plane permission exists.
+## Identity and credential boundary
 
-## Telemetry
+- APIM validates tenant, audience, `oid`, `tid`, and the configured app role. The optional Desktop preview can instead use its configured client ID and exact delegated scope.
+- APIM deletes caller `Authorization`, API-key, subscription-key, and legacy credential query values before requesting Foundry with its managed identity.
+- APIM receives `Foundry User` on the customer account. Customer release gates must separately assess direct Foundry local authentication and existing direct inference RBAC.
+- Three configured deployment names are allowlisted. Do not put shared provider credentials or direct Foundry settings on client devices.
 
-APIM diagnostics explicitly capture zero request/response body bytes and no headers. Safe traces contain APIM request ID, tenant, validated user, and operation for investigations. User/session identifiers are not custom metric dimensions. Do not enable body logging: it risks source/prompt disclosure and can disrupt SSE buffering.
+## Diagnostics and clients
 
-## Workstations
+APIM diagnostics collect no bodies or selected headers; IP collection is disabled. Safe traces hold request ID, tenant, validated identity, and operation. Success is sampled at 10%; errors are retained. When customer-supplied telemetry is used, local authentication must be disabled on that Application Insights resource.
 
-`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` applies on Windows, WSL, Linux, and macOS when supported by the installed Claude Code version. WSL is a separate Linux environment and requires its own Azure CLI sign-in/settings. Scrubbing removes environment variables; it does not stop same-user process inspection, files, shell initialization, or explicit user disclosure.
-
-Enterprise rollout must pin/test a Claude Code version, use managed settings, OS credential protection, endpoint management, and least-privilege stdio MCP configurations.
-
-Desktop remains disabled by default. Before enabling its preview path, require enterprise-app assignment, exact-scope admin consent, a managed configuration report, and refresh/revocation canaries against the pinned Desktop version.
+Managed Claude Code settings use credential refresh and subprocess environment scrubbing. Scrubbing is not process isolation; device management owns installation, permissions, version pinning, updates, and rollback. Desktop is disabled by default and remains an optional preview.

@@ -1,19 +1,11 @@
 # Observability
 
-Production creates one shared Log Analytics workspace and workspace-based Application Insights component. Every APIM instance sends zero-body diagnostics and resource metrics to that plane and keeps its resource/region identity. Set both `LOG_ANALYTICS_WORKSPACE_RESOURCE_ID` and `APPLICATION_INSIGHTS_RESOURCE_ID` to reuse an existing shared plane.
+**Purpose:** operate the implemented telemetry boundary. **Prerequisites:** a customer-approved monitoring destination and incident response owner. **Boundary:** inference continues if telemetry fails; this repository does not create an incident process or capture payloads.
 
-The Application Insights logger uses the APIM system-assigned identity with `Monitoring Metrics Publisher` on the component. Successful-request diagnostic sampling is 10%; errors are always retained. Resource metrics remain unsampled. Reassess the sampling percentage from measured cost and throughput before rollout.
+Production profiles can create a Log Analytics workspace and workspace-based Application Insights, or reuse both supplied resources. APIM uses its managed identity for telemetry. Externally supplied Application Insights must have local authentication disabled.
 
-Captured signals include region/resource, API operation, status/result class, gateway CPU and memory, gateway 401/403/429, gateway 5xx, and backend 5xx. Safe traces add APIM request ID plus validated tenant/user for incident investigation. No prompt, completion, source body, authorization header, API key, session ID, or agent ID is captured by APIM diagnostics.
+| Captured | Not captured |
+| --- | --- |
+| APIM resource/region, operation, status/result class, gateway CPU/memory, 401/403/429/5xx, backend 5xx, request ID, validated tenant/identity | Request/response bodies, selected headers, IP address, authorization/API keys, prompt/completion content, session/agent IDs |
 
-`ACTION_GROUP_RESOURCE_ID` is optional in this deployment because an enterprise monitoring layer may own incident routing. Production release still requires an approved and tested incident destination. Alert thresholds are starting controls, not SLOs; tune from observed baselines.
-
-- authentication/authorization failures;
-- rate/quota pressure and Foundry 429;
-- APIM/backend 5xx;
-- CPU/memory/capacity saturation;
-- optional Traffic Manager endpoint health;
-- 429 pass-through and 503 circuit-open symptoms after backend 5xx;
-- diagnostic ingestion delay/gaps.
-
-Application Insights or Log Analytics loss must not block inference. Detect ingestion gaps through external Azure Monitor health alerts and investigate diagnostic settings; do not enable payload logging as a workaround. Deploy per-region telemetry only as a customer compliance/data-residency overlay.
+Successful requests are sampled at 10%; errors are always retained and resource metrics are unsampled. Configure and test an approved incident destination: `ACTION_GROUP_RESOURCE_ID` is optional in IaC but not a release substitute. Monitor authentication failures, throttling, backend 5xx/circuit symptoms, capacity, Foundry quota signals, optional Traffic Manager health, and ingestion gaps. Do not enable body logging to diagnose an incident.

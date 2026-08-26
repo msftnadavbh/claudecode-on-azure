@@ -1,21 +1,14 @@
-# Networking profiles
+# Networking
 
-## Public enterprise gateway
+**Purpose:** select a supported gateway network profile. **Prerequisites:** network owner approval, DNS design, and selected APIM SKU. **Boundary:** the repository does not create subnets, DNS zones/records, certificates, routes, NSGs, Foundry private endpoints, or firewall rules.
 
-Managed workstation -> public APIM HTTPS endpoint -> public or customer-configured Foundry endpoint.
+| Profile | APIM | Customer responsibilities |
+| --- | --- | --- |
+| Public baseline | `StandardV2`, public endpoint | Entra access, any enterprise hostname/certificate, and Foundry endpoint reachability. |
+| Private gateway | `PremiumV2` VNet injection | A dedicated subnet per APIM region, NSG/routing/DNS/egress, and a Foundry endpoint resolvable from that subnet. |
+| Public HA | Two gateways plus optional Traffic Manager | CNAME/custom hostname and approved traffic-change process. |
+| Private HA | Two private gateways | Corporate DNS failover and labeled in-network smoke runners. |
 
-Entra auth remains mandatory. Add enterprise custom DNS/certificates outside this minimal template. For optional public HA, CNAME the approved name to the Traffic Manager FQDN.
+Set `APIM_NETWORKING_PROFILE=private` only with `PremiumV2` and `APIM_SUBNET_RESOURCE_ID`; secondary private APIM also needs `APIM_SECONDARY_SUBNET_RESOURCE_ID`. PremiumV2 injection is a creation-time choice. Use a dedicated subnet per instance; the platform guidance baseline is at least `/27` (`/24` recommended).
 
-## Private enterprise gateway
-
-Corp/VPN -> Premium v2 APIM VNet injection -> existing Foundry private endpoint.
-
-Set `APIM_NETWORKING_PROFILE=private` and supply one dedicated VNet-injection subnet per APIM region.
-
-A successful private deployment is not releasable until protected in-network runners produce `ha-smoke` evidence.
-
-Create customer DNS records mapping the APIM default hostname to its private VIP, link DNS to client networks, and validate corporate resolution. Configure routes, NSGs, DNS, and egress required by APIM and Entra. The template does not create or alter Foundry private endpoints, DNS, firewalls, or public access; provide Foundry endpoint URLs that resolve from the APIM subnet.
-
-The subnet must be dedicated to one APIM instance, at least `/27` (`/24` recommended), associated with an NSG, and delegated to `Microsoft.Web/hostingEnvironments`. Premium v2 injection is creation-time only. Customers whose topology specifically requires APIM Private Link plus outbound VNet integration can retain that as a separate advanced networking overlay; it is not part of the baseline template.
-
-Traffic Manager is deployed only for public HA. Private HA uses customer-specific corporate DNS failover, which this template intentionally does not create.
+The template creates no enterprise gateway hostname. Default APIM URLs are `https://<apim-name>.azure-api.net/claude`. A private deployment is not releasable until in-network `ha-smoke` evidence is retained.

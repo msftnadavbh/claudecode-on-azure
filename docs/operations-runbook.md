@@ -1,30 +1,18 @@
 # Operations and rollback
 
-| Failure | Detection / user symptom | Automatic mitigation | Operator action / recovery |
-| --- | --- | --- | --- |
-| User token expires | helper/auth error or 401 | helper asks MSAL for a current token | Reauthenticate Azure CLI; verify assignment/CA |
-| Helper/Azure CLI unavailable | Claude request cannot start | none | Install/sign in; never substitute shared credentials |
-| APIM MI token or RBAC failure | backend 401/403, users see provider error | none | Restore identity and `Foundry User`; redeploy RBAC |
-| Foundry 429 | quota alert, streamed call fails | passes to client; no circuit trip or APIM retry | Check quota; client retries if appropriate |
-| Foundry 500/503 | backend alert, streamed call fails | circuit opens after 50 backend 5xx in one minute; no APIM POST retry | Check backend health and observe closure |
-| Primary region/DNS failure with HA enabled | Traffic Manager or private DNS health degraded | configured DNS failover | Run secondary smoke; repair primary; manual failback |
-| Foundry/provider regional failure | backend alert/circuit opens; gateway health stays healthy | none | Validate the optional secondary target and manually fail over when beneficial |
-| APIM saturation/connections | CPU/memory/latency alert | concurrent-stream admission; warm fixed capacity | Reduce load or deploy a measured higher fixed capacity |
-| Client disconnect | incomplete stream traces | backend connection closes | No operator action unless rate spikes |
-| Circuit open | 503 after backend 5xx failures | one-minute trip window | Resolve backend cause and observe closure |
-| Telemetry unavailable/delayed | ingestion gap | inference continues | Repair diagnostic destination; do not enable bodies |
-| Agent fan-out/morning surge | per-user 429, capacity/token pressure | per-user RPM/TPM fairness | Validate entitlement, limits, and aggregate quota |
-| Deployment renamed/removed | backend model errors | none | Restore pinned deployment or controlled settings update |
-| Claude Code alias behavior changes | wrong/failed model selection | pinned deployment env values | Halt rollout; regression-test and pin client version |
+**Purpose:** handle common operational failures and controlled rollback. **Prerequisites:** approved access to customer resources and a retained last-known-good source revision. **Boundary:** rollback is reviewed, non-destructive OpenTofu; it cannot include deletion or replacement because the workflow rejects those changes.
 
-## Deployment rollback
+| Condition | Behavior | Operator action |
+| --- | --- | --- |
+| User/helper authentication failure | No fallback credential | Reauthenticate Azure CLI and verify Entra assignment/Conditional Access. |
+| Foundry 429 | Passed through; no retry or breaker trip | Check quota/limits; retry only where client policy permits. |
+| Foundry 5xx | Breaker opens after 50 backend 5xx/minute | Resolve backend issue and observe closure; no POST replay. |
+| APIM saturation | Approximate local admission limits apply | Reduce load or deploy reviewed, measured fixed capacity. |
+| Regional/APIM failure | Optional DNS routing may change gateway | Validate secondary and follow approved traffic procedure; manually fail back. |
+| Telemetry gap | Inference continues | Repair destination; do not enable payload capture. |
 
-Every deployment uses OpenTofu and API revision `1`. Before production approval, retain the previous successful commit and plan summary. Workflow apply regenerates from the same commit and inputs, verifies the redacted planned-change digests, and applies that verified equivalent plan. To roll back, dispatch the workflow at the prior commit, review the new plan for destructive changes, apply, and smoke every enabled region. Never restore state as an infrastructure rollback. Do not mutate customer-owned Foundry deployments through this repository.
+## Rollback
 
-For a policy-only incident, apply a newly reviewed plan from the last-known-good commit rather than editing APIM in the portal. `migration/bicep` is a deprecated, non-authoritative reference; using it changes Azure outside OpenTofu state and requires reconciliation.
+Dispatch the protected workflow from the last-known-good source. Review the regenerated OpenTofu plan and summary; apply only when it contains no delete/replacement action and integrity checks pass. Do not restore state or make portal-only APIM edits. Roll back clients by redeploying the prior managed settings and helper through device management. Foundry model rollback is customer-owned.
 
-## HA drill evidence
-
-Use `.github/workflows/ha-smoke.yml` for observer-only readiness, failover, failback, and rollback evidence. URLs come only from the protected environment, and execution requires a labeled in-network self-hosted runner. The artifact contains endpoint hostnames and resolved addresses but no token or model output; retain it for 90 days. Traffic changes and rollback deployments remain separate approved operator actions.
-
-Validation, planning, deployment, smoke, and HA workflows retain release evidence for 90 days. Before approval, compare the artifact commit SHA with the reviewed source and managed client artifact. Roll back clients by redeploying the last-known-good managed file and helper; do not remove management policy as a shortcut.
+For private/HA drills, `ha-smoke` is observer-only. It retains evidence; operators separately perform approved traffic changes. See [troubleshooting](troubleshooting.md) for symptom-based recovery.

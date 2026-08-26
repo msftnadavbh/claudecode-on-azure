@@ -1,6 +1,6 @@
-# Foundry Preflight
+# Foundry preflight
 
-`scripts/foundry_preflight.py` performs read-only checks against the existing Microsoft Foundry account and the three deployments configured for Claude. It creates or changes nothing.
+**Purpose:** read-only verification of the existing Foundry account and three configured deployments. **Prerequisites:** Azure access to the customer Foundry account and resolved input values. **Boundary:** the command creates or changes nothing and does not prove quota headroom or enforce Foundry security settings.
 
 ```bash
 python3 scripts/foundry_preflight.py \
@@ -13,6 +13,4 @@ python3 scripts/foundry_preflight.py \
   --deployment "haiku=$ANTHROPIC_DEFAULT_HAIKU_MODEL"
 ```
 
-The command fails when the active Azure subscription, account, endpoint, deployment state, or model publisher differs from the requested configuration. It prints deterministic JSON containing the resolved model version, SKU, and capacity for each role.
-
-Quota rows are advisory. Azure usage output does not reliably prove the effective Claude quota pool or deployment headroom, so missing or ambiguous rows produce warnings rather than invented conclusions. Confirm effective quota scope and headroom in Microsoft Foundry before rollout.
+It fails on mismatched active subscription, account, endpoint, deployment state, or model publisher and emits deterministic JSON describing deployment version, SKU, and capacity. Use the same deployment names in a secondary Foundry target. Treat quota rows as advisory; confirm actual quota scope and operational headroom in Foundry before release.

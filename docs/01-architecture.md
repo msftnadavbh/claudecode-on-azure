@@ -1,25 +1,25 @@
 # Architecture
 
-## Deployed topology
+**Purpose:** describe the implemented request path and topology choices. **Prerequisites:** customer-owned Foundry deployments, Entra application, resource group, and any selected network resources. **Boundary:** this repository manages APIM and its integration resources; it does not create Foundry, Entra, DNS, certificates, private endpoints, or a custom hostname.
 
-```text
-managed workstation -> enterprise DNS -> APIM -> Foundry Claude
-                                      \-> optional secondary APIM
-```
+## Baseline and options
 
-The production baseline is one fixed-capacity APIM and one Foundry target. Optional HA adds a second APIM, which uses the primary Foundry account by default. Public HA can add Traffic Manager; private HA uses customer-managed DNS. APIM regions share telemetry but retain resource and region identity. Each APIM identity receives `Foundry User` on its configured account.
+The baseline is fixed-capacity, public, single-region `StandardV2` APIM. `PremiumV2` is required for either zone redundancy or private VNet injection. An optional second APIM provides a separate regional gateway. Public HA may use optional Traffic Manager; private failover DNS and all traffic changes are customer-operated.
 
 ## Request path
 
-1. Claude Code obtains a user token for the APIM application audience through `apiKeyHelper`.
-2. APIM validates tenant, audience, `oid`, `tid`, and app role from the bearer `Authorization` header.
-3. APIM keys RPM and generation-token controls by `tid:oid`; token counting receives only RPM protection.
-4. APIM removes caller/provider credentials and keeps identity only in bounded gateway traces.
-5. APIM selects the configured backend entity. As a starting safety rule, its circuit opens after 50 backend 5xx responses in one minute; 429 throttles pass to clients, and APIM does not retry or replay inference POSTs.
-6. APIM obtains its own Foundry token and streams the native response without buffering.
+```text
+Managed Claude Code -> Entra user token -> APIM /claude -> customer Foundry /anthropic
+```
 
-Foundry accounts, model deployments, versions, deployment types, capacity, and networking are external customer resources. The template only creates APIM-owned resources and RBAC assignments.
+1. Claude Code gets a user token through its managed `apiKeyHelper`.
+2. APIM validates tenant, audience, `oid`, `tid`, and the app-role authorization (or the optional Desktop preview's exact delegated scope).
+3. APIM applies per-user RPM, messages-only TPM, per-user concurrency, and aggregate concurrency. Concurrency counters are gateway-local and approximate; configured aggregate admission must remain below 2,048.
+4. APIM strips caller credentials, obtains a managed-identity token, and calls Foundry under `Foundry User`.
+5. APIM allows only the three configured deployment names and forwards native Messages/count-token routes. SSE responses are unbuffered; inference POSTs are never replayed.
 
-## Availability semantics
+The backend breaker opens after 50 backend 5xx responses in one minute. It does not trip on 429 and does not retry requests. A secondary Foundry target is optional but must expose the same three deployment names.
 
-Optional HA is active/passive. In-flight streams fail during regional loss and must be retried by Claude Code. Per-user APIM counters are service-local, so failover can temporarily reset effective counters. Foundry quota scope may span resources/regions and is verified separately.
+## Availability boundary
+
+In-flight streams can fail during a regional event and must be retried by clients. Gateway-local counters can reset on failover. `/claude/health` is unauthenticated APIM-local health, not a Foundry/model check. See [availability and DR](availability-dr.md) for operator procedures.

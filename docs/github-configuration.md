@@ -1,0 +1,49 @@
+# GitHub deployment configuration
+
+Configure this inventory in the GitHub environment selected by the workflow. **Prerequisites:** customer-created GitHub environments, Azure federated identities, and external Blob state. **Boundary:** the workflow uses OIDC and creates no GitHub identity, environment, state storage, or reviewer rule.
+
+`deploy` accepts `environment_profile` (`poc` or `prod`) and `networking_profile` (`public` or `private`). Its `prod` input maps to the `prod-primary` GitHub environment; `poc` maps to `poc`. The networking input must match `APIM_NETWORKING_PROFILE` for `prod`.
+
+## Secrets
+
+| Secret | Required when | Purpose |
+| --- | --- | --- |
+| `AZURE_RESOURCE_GROUP` | Always | Existing gateway resource group. |
+| `AZURE_CLIENT_ID` | Always | OIDC deployment identity client ID. |
+| `AZURE_TENANT_ID` | Always | Tenant for Azure login. |
+| `AZURE_SUBSCRIPTION_ID` | Always | Target subscription for APIM resources. |
+| `AZURE_SMOKE_CLIENT_ID` | Public smoke / `ha-smoke` | Federated smoke identity client ID. |
+
+## Required variables
+
+| Variables | Value |
+| --- | --- |
+| `AZURE_LOCATION`, `APIM_NAME`, `APIM_PUBLISHER_EMAIL`, `APIM_PUBLISHER_NAME` | Primary APIM identity and location. |
+| `ENTRA_TENANT_ID`, `APIM_EXPECTED_AUDIENCE`, `APIM_REQUIRED_APP_ROLE` | Caller-token validation. |
+| `FOUNDRY_BASE_URL`, `FOUNDRY_SUBSCRIPTION_ID`, `FOUNDRY_RESOURCE_GROUP`, `FOUNDRY_ACCOUNT_NAME` | Existing Foundry target. The URL is `https://<account>.services.ai.azure.com/anthropic`. |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Three existing, allowlisted deployment names. |
+| `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, `PER_USER_CONCURRENT_STREAM_LIMIT`, `AGGREGATE_CONCURRENT_STREAM_LIMIT` | Measured controls; require `per-user < aggregate < 2048`. RPM/TPM apply to messages; concurrency is gateway-local and approximate. |
+| `APIM_SKU`, `APIM_ZONE_REDUNDANT`, `APIM_DEFAULT_CAPACITY` | `StandardV2`, `false`, and a measured fixed capacity for the public baseline. |
+| `TOFU_STATE_SUBSCRIPTION_ID`, `TOFU_STATE_RG`, `TOFU_STATE_STORAGE_ACCOUNT`, `TOFU_STATE_CONTAINER`, `TOFU_STATE_KEY` | Existing Azure Blob backend coordinates. |
+
+## Optional and conditional variables
+
+| Variables | When required / behavior |
+| --- | --- |
+| `DEPLOY_SECONDARY` | Defaults to `false`. When `true`, require `AZURE_SECONDARY_LOCATION` and `APIM_SECONDARY_NAME`. A blank secondary Foundry URL uses the primary target. |
+| `SECONDARY_FOUNDRY_BASE_URL`, `SECONDARY_FOUNDRY_SUBSCRIPTION_ID`, `SECONDARY_FOUNDRY_RESOURCE_GROUP`, `SECONDARY_FOUNDRY_ACCOUNT_NAME` | Provide all four to use a secondary Foundry target; its deployment names must match the primary names. |
+| `APIM_NETWORKING_PROFILE` | Defaults to `public`. Set `private` only with `PremiumV2` and `APIM_SUBNET_RESOURCE_ID`; also supply `APIM_SECONDARY_SUBNET_RESOURCE_ID` when deploying secondary. |
+| `LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`, `APPLICATION_INSIGHTS_RESOURCE_ID` | Supply both to reuse external telemetry, or neither for repository-created telemetry. External Application Insights must have local auth disabled. |
+| `ACTION_GROUP_RESOURCE_ID` | Existing incident destination; optional in configuration, required as part of customer release approval. |
+| `TRAFFIC_MANAGER_ENABLED`, `TRAFFIC_MANAGER_NAME` | Defaults to `false`; only effective for public secondary topology. Name is optional and otherwise derives from the primary APIM name. |
+| `CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED` | Defaults to `false`. When `true`, also require `CLAUDE_DESKTOP_CLIENT_ID` and `CLAUDE_DESKTOP_DELEGATED_SCOPE` (short `scp` claim value). Desktop remains preview-only. |
+
+## OIDC, state, and review responsibilities
+
+Use immutable GitHub-environment/repository/branch subject claims for deployment and smoke federated credentials. Grant the deployment identity AzureRM and Blob access required for the target and state container; use Azure AD/OIDC backend authentication, not storage keys. The customer creates a private Blob container with versioning and soft delete and controls state access.
+
+Protect `prod-primary` with required reviewers. The plan job creates Foundry preflight, run context, and a sanitized plan summary; the deploy job checks commit, generated inputs, provider lock, target subscription, state coordinates, and summary equivalence before apply. It rejects delete/replacement changes. The summary proves equivalent planned changes, **not** human-readable semantic intent; reviewers must still inspect source, inputs, and summary. Raw plans and state are not retained.
+
+## HA smoke environment values
+
+The protected `ha-smoke` workflow uses `prod-primary`, `AZURE_SMOKE_CLIENT_ID`, `AZURE_TENANT_ID`, and these environment variables: `APIM_EXPECTED_AUDIENCE`, the three model deployment variables, `APIM_PRIMARY_BASE_URL`, optional `APIM_SECONDARY_BASE_URL`, and optional `APIM_FAILOVER_BASE_URL`. URLs include `/claude`, for example `https://<apim-name>.azure-api.net/claude`; the failover URL is customer-selected or the Traffic Manager FQDN plus `/claude`. Run it only from the required labeled, in-network self-hosted runner.
