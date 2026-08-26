@@ -1,6 +1,6 @@
 # Managed Claude Code settings
 
-**Purpose:** generate non-secret, platform-specific Claude Code configuration for device management. **Prerequisites:** gateway URL, Entra audience, three Foundry deployment names, and managed helper paths. **Boundary:** generation writes files only; device management owns install, permissions, version pinning, update, and rollback. A native Windows helper is customer-provided.
+Generate non-secret, platform-specific Claude Code configuration for device management. You need the gateway URL, Entra audience, three Foundry deployment names, and managed helper paths. Generation writes files only; device management installs them, sets permissions, pins versions, updates, and rolls back. You provide a native Windows helper.
 
 ```bash
 python3 scripts/claude_code/generate_managed_settings.py \
@@ -23,4 +23,4 @@ Deploy the generated file through the organization’s management system:
 
 The files configure generic gateway mode, a five-minute helper cache, subprocess environment scrubbing, and deployment-name defaults. They do not contain a token, API key, Foundry-native setting, or user shell-profile configuration.
 
-The bundled `scripts/auth/apim-user-token-helper.sh` is for macOS/Linux/WSL. Pilot the customer native Windows helper before any Windows rollout. Roll back by redeploying the prior settings and helper, then restarting Claude Code; do not remove management as a recovery shortcut.
+The bundled `scripts/auth/apim-user-token-helper.sh` is for macOS/Linux/WSL. Pilot your native Windows helper before any Windows rollout. Roll back by redeploying the prior settings and helper, then restarting Claude Code; do not remove management as a recovery shortcut.

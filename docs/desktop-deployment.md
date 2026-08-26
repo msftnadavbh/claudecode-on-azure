@@ -1,6 +1,6 @@
 # Claude Desktop preview
 
-**Purpose:** optionally generate managed Claude Desktop gateway configuration. **Prerequisites:** customer Desktop enterprise app, public-client registration with redirect URI `http://127.0.0.1/callback`, delegated consent, pilot devices, and endpoint management. **Boundary:** Desktop is preview-only and disabled by default; this repository does not install Desktop, create its Entra registration, or make registry/profile changes.
+Generate managed Claude Desktop gateway configuration when you need the optional preview. You provide a Desktop enterprise app, a public-client registration with redirect URI `http://127.0.0.1/callback`, delegated consent, pilot devices, and endpoint management. Desktop is preview-only and disabled by default; this repository does not install Desktop, create its Entra registration, or make registry or profile changes.
 
 ```bash
 python3 scripts/desktop/generate_managed_config.py \

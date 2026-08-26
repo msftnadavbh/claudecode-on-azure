@@ -1,6 +1,6 @@
 # Operations and rollback
 
-**Purpose:** handle common operational failures and controlled rollback. **Prerequisites:** approved access to customer resources and a retained last-known-good source revision. **Boundary:** rollback is reviewed, non-destructive OpenTofu; it cannot include deletion or replacement because the workflow rejects those changes.
+Use this runbook for common operational failures and controlled rollback. Keep approved access to your resources and a last-known-good source revision. Rollback is reviewed and non-destructive OpenTofu; it cannot include deletion or replacement because the workflow rejects those changes.
 
 | Condition | Behavior | Operator action |
 | --- | --- | --- |
@@ -13,6 +13,6 @@
 
 ## Rollback
 
-Dispatch the protected workflow from the last-known-good source. Review the regenerated OpenTofu plan and summary; apply only when it contains no delete/replacement action and integrity checks pass. Do not restore state or make portal-only APIM edits. Roll back clients by redeploying the prior managed settings and helper through device management. Foundry model rollback is customer-owned.
+Dispatch the protected workflow from the last-known-good source. Review the regenerated OpenTofu plan and summary; apply only when it contains no delete/replacement action and integrity checks pass. Do not restore state or make portal-only APIM edits. Roll back clients by redeploying the prior managed settings and helper through device management. Roll back Foundry models separately.
 
 For private/HA drills, `ha-smoke` is observer-only. It retains evidence; operators separately perform approved traffic changes. See [troubleshooting](troubleshooting.md) for symptom-based recovery.

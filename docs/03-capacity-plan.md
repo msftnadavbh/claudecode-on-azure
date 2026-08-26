@@ -1,6 +1,6 @@
 # Capacity and load planning
 
-**Purpose:** establish customer measurements before setting APIM limits or approving rollout. **Prerequisites:** representative workload data, Foundry quota visibility, and authority to run approved tests. **Boundary:** no repository default proves APIM or Foundry capacity.
+Measure capacity before setting APIM limits or approving rollout. You need representative workload data, Foundry quota visibility, and authority to run approved tests. No repository default proves APIM or Foundry capacity.
 
 ## Model demand
 

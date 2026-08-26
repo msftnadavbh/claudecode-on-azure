@@ -1,6 +1,6 @@
 # Foundry preflight
 
-**Purpose:** read-only verification of the existing Foundry account and three configured deployments. **Prerequisites:** Azure access to the customer Foundry account and resolved input values. **Boundary:** the command creates or changes nothing and does not prove quota headroom or enforce Foundry security settings.
+Run this read-only check against the existing Foundry account and three configured deployments. You need Azure access to the account and resolved input values. The command creates and changes nothing; it does not prove quota headroom or enforce Foundry security settings.
 
 ```bash
 python3 scripts/foundry_preflight.py \

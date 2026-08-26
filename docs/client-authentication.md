@@ -1,6 +1,6 @@
 # Client authentication
 
-**Purpose:** connect managed Claude Code clients through APIM. **Prerequisites:** customer-owned Entra caller application, audience, app role, assignments, consent, Azure CLI policy, and device management. **Boundary:** this repository provides no static credential, Entra app registration, or native Windows helper.
+Connect managed Claude Code clients through APIM. You provide the Entra caller application, audience, app role, assignments, consent, Azure CLI policy, and device management. This repository provides no static credential, Entra app registration, or native Windows helper.
 
 Use generic gateway mode: clients send native Anthropic requests to `ANTHROPIC_BASE_URL=https://<apim-name>.azure-api.net/claude`; the managed `apiKeyHelper` returns only a raw Entra token. Claude Code places helper output in credential headers; APIM validates the bearer authorization, strips both caller credentials, and uses its managed identity for Foundry.
 

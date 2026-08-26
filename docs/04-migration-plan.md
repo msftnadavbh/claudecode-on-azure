@@ -1,10 +1,10 @@
 # Migration and adoption
 
-**Purpose:** choose a safe path for a new APIM deployment or adoption of an existing one. **Prerequisites:** customer owners for Foundry, Entra, state, networking, and change approval. **Boundary:** OpenTofu is the active deployment path.
+Choose a safe path for a new APIM deployment or adoption of an existing one. Ensure Foundry, Entra, state, networking, and change approval are available. OpenTofu is the active deployment path.
 
 ## New APIM deployment
 
-1. Prepare customer-owned Foundry deployments, Entra app/roles, GitHub OIDC/environments, Blob state, resource group, and selected networking.
+1. Prepare your Foundry deployments, Entra app and roles, GitHub OIDC and environments, Blob state, resource group, and selected networking.
 2. Start with public, single-region `StandardV2` unless private injection or zone redundancy requires `PremiumV2`.
 3. Configure [GitHub variables and secrets](github-configuration.md), run [Foundry preflight](foundry-preflight.md), and review the protected plan.
 4. Deploy, run the applicable smoke evidence, pilot managed clients, then approve capacity and operational gates.

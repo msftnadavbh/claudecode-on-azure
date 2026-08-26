@@ -1,47 +1,48 @@
 # Claude Code Enterprise Gateway on Azure
 
-Deploy a governed Claude Code gateway for customer validation: Microsoft Entra authenticates callers, Azure API Management (APIM) applies gateway controls, and APIM's managed identity calls customer-owned Microsoft Foundry Claude deployments. Clients use the native Anthropic Messages API without direct Foundry credentials.
-
-For platform and security teams validating a managed Claude Code rollout—not a claim that a particular topology, capacity, or fleet size is already proven in production.
+Deploy a governed Claude Code gateway that authenticates callers with Microsoft Entra, applies controls in Azure API Management (APIM), and calls Microsoft Foundry Claude deployments with APIM's managed identity. Configure and operate managed clients through the native Anthropic Messages API without direct Foundry credentials.
 
 ## What this deploys
 
 - `/claude` on APIM, with native `/v1/messages` and `/v1/messages/count_tokens`, unbuffered SSE, and APIM-local unauthenticated `/health`.
 - A fixed-capacity, public, single-region `StandardV2` APIM baseline. Use `PremiumV2` only for zone redundancy or private VNet injection.
-- Optional second APIM and public Traffic Manager. Private DNS, failover, custom DNS, and certificates remain customer-owned.
+- Optional second APIM and public Traffic Manager. You provide private DNS, failover, custom DNS, and certificates.
 - APIM policy, managed identity access to Foundry, optional telemetry and alerts, and managed Claude Code configuration generators.
 
 ![Conceptual Claude Code Enterprise Gateway on Azure architecture. The written implementation boundary below is authoritative.](assets/architecture/claude-code-enterprise-gateway.png)
 
-`Claude Code → Microsoft Entra ID → Azure API Management → Microsoft Foundry → customer-managed Claude deployments`
+`Claude Code → Microsoft Entra ID → Azure API Management → Microsoft Foundry → your Claude deployments`
 
-## Customer prerequisites
+## Before you begin
 
-Before deployment, provide the customer-owned resources and decisions: Foundry account and three pinned deployment names; Entra app registration and assignments; GitHub identities, protected environments, and OIDC federation; a resource group and external Azure Blob state; and, where selected, subnets, DNS, certificates, Foundry private endpoints, telemetry destinations, and a native Windows helper. This repository does not create them.
+You provide a Foundry account with three pinned deployment names; an Entra app registration and assignments; GitHub identities, protected environments, and OIDC federation; a resource group; and external Azure Blob state. For selected topologies, also provide subnets, DNS, certificates, Foundry private endpoints, telemetry destinations, and a native Windows helper. This repository creates APIM and its integration resources; it does not create those prerequisites. See [getting started](docs/getting-started.md) and the [GitHub configuration inventory](docs/github-configuration.md).
 
-## Supported baseline
+## Deploy
 
-OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.7.0`. Three configured Foundry deployment names are allowlisted by APIM; a secondary Foundry account, when used, must expose the same names. Claude Code is supported through the bundled helper on macOS, Linux, and WSL; native Windows requires a customer helper. Claude Desktop is an optional preview.
+1. Configure [GitHub environments, OIDC, state, secrets, and variables](docs/github-configuration.md).
+2. Run the read-only [Foundry preflight](docs/foundry-preflight.md) and repository validation.
+3. Dispatch the protected `deploy` workflow with matching `environment_profile` and `networking_profile`.
+4. Retain public smoke evidence, or run protected in-network `ha-smoke` for private or HA deployments.
 
-## Customer journey
+OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.7.0`. The three configured Foundry deployment names are allowlisted; a secondary Foundry account must expose the same names.
 
-1. Choose the [topology and prerequisites](docs/getting-started.md).
-2. Configure [GitHub environments, OIDC, state, and inputs](docs/github-configuration.md).
-3. Run [Foundry preflight](docs/foundry-preflight.md), validate, dispatch the protected workflow, and complete the applicable smoke test.
-4. Pilot managed Claude Code clients, then approve capacity, operations, and release gates.
+## Configure Claude Code
 
-## Validation boundary
+Use the bundled helper on macOS, Linux, and WSL; provide and pilot a native Windows helper before a Windows rollout. [Configure managed Claude Code settings](docs/claude-code-managed-settings.md) and run the [client canary](docs/claude-code-canary.md). Claude Desktop is an optional preview.
 
-Repository validation checks configuration and local tools; it does not prove your Foundry quota, APIM capacity, private connectivity, SLOs, failover, or client fleet. The [production readiness gates](docs/production-readiness.md) define the customer evidence required before rollout.
-
-## Documentation
-
-Start at the [documentation index](docs/index.md) for lifecycle and role-based guidance. For operational symptoms, see [troubleshooting](docs/troubleshooting.md).
-
-## Validate the repository
+## Validate
 
 Requires Bash, Python 3, ShellCheck, and OpenTofu.
 
 ```bash
 scripts/test/validate.sh
 ```
+
+This checks repository configuration and local tools. It does not prove Foundry quota, APIM capacity, private connectivity, SLOs, failover, or client-fleet behavior; use the [production readiness gates](docs/production-readiness.md) before rollout.
+
+## Documentation
+
+- [Documentation](docs/index.md)
+- [Architecture](docs/01-architecture.md)
+- [Networking and availability](docs/networking.md) and [operations](docs/operations-runbook.md)
+- [Troubleshooting](docs/troubleshooting.md)

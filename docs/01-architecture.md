@@ -1,15 +1,15 @@
 # Architecture
 
-**Purpose:** describe the implemented request path and topology choices. **Prerequisites:** customer-owned Foundry deployments, Entra application, resource group, and any selected network resources. **Boundary:** this repository manages APIM and its integration resources; it does not create Foundry, Entra, DNS, certificates, private endpoints, or a custom hostname.
+Use this page to understand the request path and topology choices. You provide Foundry deployments, an Entra application, a resource group, and any selected network resources. This repository manages APIM and its integration resources; it does not create Foundry, Entra, DNS, certificates, private endpoints, or a custom hostname.
 
 ## Baseline and options
 
-The baseline is fixed-capacity, public, single-region `StandardV2` APIM. `PremiumV2` is required for either zone redundancy or private VNet injection. An optional second APIM provides a separate regional gateway. Public HA may use optional Traffic Manager; private failover DNS and all traffic changes are customer-operated.
+The baseline is fixed-capacity, public, single-region `StandardV2` APIM. `PremiumV2` is required for either zone redundancy or private VNet injection. An optional second APIM provides a separate regional gateway. Public HA may use optional Traffic Manager; you operate private failover DNS and all traffic changes.
 
 ## Request path
 
 ```text
-Managed Claude Code -> Entra user token -> APIM /claude -> customer Foundry /anthropic
+Managed Claude Code -> Entra user token -> APIM /claude -> your Foundry /anthropic
 ```
 
 1. Claude Code gets a user token through its managed `apiKeyHelper`.

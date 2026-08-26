@@ -1,6 +1,6 @@
 # Claude Code client canary
 
-**Purpose:** make a controlled live request from an installed, managed Claude Code client. **Prerequisites:** the approved Azure CLI session, installed Claude Code, and the managed gateway launch environment. **Boundary:** the script does not configure credentials, source managed settings, or export their values to its parent shell.
+Use this script to make a controlled live request from an installed, managed Claude Code client. You need an approved Azure CLI session, installed Claude Code, and the managed gateway launch environment. The script does not configure credentials, source managed settings, or export their values to its parent shell.
 
 ```bash
 python3 scripts/test/claude_code_canary.py

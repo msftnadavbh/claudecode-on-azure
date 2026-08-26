@@ -1,6 +1,6 @@
 # Observability
 
-**Purpose:** operate the implemented telemetry boundary. **Prerequisites:** a customer-approved monitoring destination and incident response owner. **Boundary:** inference continues if telemetry fails; this repository does not create an incident process or capture payloads.
+Use this page to operate the telemetry boundary. Provide an approved monitoring destination and an incident response owner. Inference continues if telemetry fails; this repository does not create an incident process or capture payloads.
 
 Production profiles can create a Log Analytics workspace and workspace-based Application Insights, or reuse both supplied resources. APIM uses its managed identity for telemetry. Externally supplied Application Insights must have local authentication disabled.
 

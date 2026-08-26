@@ -1,6 +1,6 @@
 # Load testing
 
-**Purpose:** validate the local probe and guide approved gateway/load runs. **Prerequisites:** Python 3 and, for APIM/Foundry tests, customer approval and target access. **Boundary:** a local synthetic test proves neither APIM nor Foundry capacity.
+Use this page to validate the local probe and run approved gateway load tests. You need Python 3 and, for APIM or Foundry tests, approval and target access. A local synthetic test proves neither APIM nor Foundry capacity.
 
 ## Safe local tool self-test
 

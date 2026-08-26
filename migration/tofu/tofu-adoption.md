@@ -1,6 +1,6 @@
 # OpenTofu existing-resource adoption
 
-**Purpose:** adopt existing resources into the active OpenTofu deployment path. **Prerequisites:** reviewed tfvars, pre-created remote state, complete Azure resource inventory, and change approval. **Boundary:** the generated import manifest is a review aid, not proof of complete import coverage; OpenTofu is the only active deployment path.
+Use this runbook to adopt existing resources into the active OpenTofu deployment path. Prepare reviewed tfvars, remote state, a complete Azure resource inventory, and change approval first. The generated import manifest is a review aid, not proof of complete import coverage.
 
 ## Remote-state bootstrap prerequisites
 

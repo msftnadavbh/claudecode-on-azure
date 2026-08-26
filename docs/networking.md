@@ -1,8 +1,8 @@
 # Networking
 
-**Purpose:** select a supported gateway network profile. **Prerequisites:** network owner approval, DNS design, and selected APIM SKU. **Boundary:** the repository does not create subnets, DNS zones/records, certificates, routes, NSGs, Foundry private endpoints, or firewall rules.
+Select a supported gateway network profile. You need network approval, a DNS design, and an APIM SKU. This repository does not create subnets, DNS zones or records, certificates, routes, NSGs, Foundry private endpoints, or firewall rules.
 
-| Profile | APIM | Customer responsibilities |
+| Profile | APIM | You provide |
 | --- | --- | --- |
 | Public baseline | `StandardV2`, public endpoint | Entra access, any enterprise hostname/certificate, and Foundry endpoint reachability. |
 | Private gateway | `PremiumV2` VNet injection | A dedicated subnet per APIM region, NSG/routing/DNS/egress, and a Foundry endpoint resolvable from that subnet. |
