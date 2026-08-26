@@ -50,6 +50,11 @@ assert 'actor == &quot;{{claude-desktop-client-id}}&quot;' in base
 assert 'value == &quot;{{claude-desktop-delegated-scope}}&quot;' in base
 assert '&quot;{{claude-desktop-delegated-auth-enabled}}&quot; == &quot;true&quot;' in base
 assert inbound.find("./choose/when/return-response/set-status[@code='403']") is not None
+model = inbound.find("set-variable[@name='requestedModel']")
+assert model is not None and 'As<JObject>(preserveContent: true)' in model.get("value", "")
+model_rejection = inbound.findall("choose/when/return-response/set-status[@code='400']")
+assert len(model_rejection) == 1
+assert all(f"{{{{{name}}}}}" in base for name in ("opus-model", "sonnet-model", "haiku-model"))
 
 deleted_headers = {
     node.get("name", "").lower()
@@ -87,6 +92,7 @@ assert messages.find("llm-token-limit") is not None
 assert count_tokens.find("rate-limit-by-key") is not None
 assert count_tokens.find("llm-token-limit") is None
 assert all(policy.find("quota-by-key") is None for policy in (messages, count_tokens))
+assert messages.find("base") is not None and count_tokens.find("base") is not None
 
 tofu = "\n".join(path.read_text() for path in Path("infra/tofu").glob("*.tf"))
 named_values = re.search(r"named_values\s*=\s*\{(.*?)\n  \}", tofu, re.S)
@@ -96,8 +102,11 @@ referenced = set(re.findall(r"\{\{([a-z0-9-]+)\}\}", "".join(policies.values()))
 assert referenced <= managed, f"unmanaged policy named values: {referenced - managed}"
 assert 'subscription_required = false' in tofu
 assert 'condition     = var.per_user_concurrent_stream_limit < var.aggregate_concurrent_stream_limit && var.aggregate_concurrent_stream_limit < 2048' in tofu
+assert 'condition     = var.default_capacity >= 1' in tofu
+assert 'var.default_capacity >= 2' not in tofu
 assert 'condition     = var.networking_profile != "private" || var.apim_sku_name == "PremiumV2"' in tofu
 assert 'condition     = !var.zone_redundant || var.apim_sku_name == "PremiumV2"' in tofu
+assert 'local_authentication_disabled = true' in tofu
 assert tofu.count('default     = "disabled"') == 2
 assert 'for_each = var.action_group_resource_id == "" ? [] : [var.action_group_resource_id]' in tofu
 breaker = tofu.split('resource "azurerm_api_management_backend" "foundry"', 1)[1].split('resource ', 1)[0]
@@ -117,47 +126,15 @@ assert "planned_change_sha256" in Path("scripts/tofu/plan_summary.py").read_text
 assert "inputs.networking_profile == 'public'" in workflow
 assert "runs-on: [self-hosted" in ha_workflow
 assert "scripts/foundry_preflight.py" in workflow
+assert "secondary-foundry-preflight.json" in workflow
+assert workflow.count("allow-no-subscriptions: true") == 1
+assert "allow-no-subscriptions: true" in ha_workflow
+assert 'azurerm_api_management_backend.foundry' in tofu.split('resource "azurerm_api_management_api_policy" "claude"', 1)[1].split('resource ', 1)[0]
 PY
 
-build_dir="$(mktemp -d)"
-trap 'rm -rf "${build_dir}"' EXIT
-
-if command -v bicep >/dev/null 2>&1; then
-  bicep build migration/bicep/main.bicep --outfile "${build_dir}/main.json"
-  bicep build-params migration/bicep/params/poc.bicepparam --outfile "${build_dir}/poc.parameters.json"
-  build_prod_params=(bicep build-params migration/bicep/params/prod.bicepparam --outfile "${build_dir}/prod.parameters.json")
-elif command -v az >/dev/null 2>&1; then
-  az bicep build --file migration/bicep/main.bicep --outfile "${build_dir}/main.json"
-  az bicep build-params --file migration/bicep/params/poc.bicepparam --outfile "${build_dir}/poc.parameters.json"
-  build_prod_params=(az bicep build-params --file migration/bicep/params/prod.bicepparam --outfile "${build_dir}/prod.parameters.json")
-else
-  echo "Bicep CLI or Azure CLI is required" >&2
-  exit 1
-fi
-
-AZURE_LOCATION=eastus \
-APIM_NAME=test-primary \
-APIM_PUBLISHER_EMAIL=test@example.com \
-APIM_PUBLISHER_NAME=Test \
-ENTRA_TENANT_ID=11111111-1111-1111-1111-111111111111 \
-FOUNDRY_BASE_URL=https://primary.services.ai.azure.com/anthropic \
-FOUNDRY_SUBSCRIPTION_ID=22222222-2222-2222-2222-222222222222 \
-FOUNDRY_RESOURCE_GROUP=test-foundry \
-FOUNDRY_ACCOUNT_NAME=test-foundry \
-APIM_EXPECTED_AUDIENCE=api://test \
-APIM_REQUIRED_APP_ROLE=ClaudeCode.User \
-ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-pinned \
-ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-pinned \
-ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-pinned \
-PER_USER_RATE_LIMIT=100 \
-PER_USER_TOKEN_LIMIT=50000 \
-PER_USER_CONCURRENT_STREAM_LIMIT=20 \
-AGGREGATE_CONCURRENT_STREAM_LIMIT=40 \
-APIM_SKU=PremiumV2 \
-APIM_ZONE_REDUNDANT=true \
-ACTION_GROUP_RESOURCE_ID=/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/monitoring/providers/Microsoft.Insights/actionGroups/oncall \
-APIM_DEFAULT_CAPACITY=2 \
-  "${build_prod_params[@]}"
+tofu -chdir=infra/tofu fmt -check
+tofu -chdir=infra/tofu init -input=false -backend=false -lockfile=readonly
+tofu -chdir=infra/tofu validate
 
 if grep -R -n -E '(listSecrets|ANTHROPIC_(API_KEY|AUTH_TOKEN)=|Ocp-Apim-Subscription-Key:|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)' \
   README.md CLAUDE.md docs infra apim scripts migration .github --exclude='validate.sh' --exclude-dir='.terraform'; then

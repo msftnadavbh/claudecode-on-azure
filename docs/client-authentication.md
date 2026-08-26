@@ -8,6 +8,16 @@ Generate and deploy platform-specific managed files with [Claude Code managed se
 
 The helper prints only the raw Entra token. Claude Code uses helper output in both `Authorization: Bearer` and `x-api-key`; APIM validates `Authorization` and strips both headers before installing its own managed-identity authorization. Do not add a bearer prefix in the helper.
 
+## Entra prerequisites
+
+1. In the caller-facing app registration, expose the API, set its Application ID URI to `APIM_EXPECTED_AUDIENCE`, and leave `requestedAccessTokenVersion` at `1`; configure the same URI as `APIM_AUDIENCE` for the managed client environment.
+2. Define an app role whose value exactly matches `APIM_REQUIRED_APP_ROLE`, allow both `User` and `Application` members, and assign the intended users/groups and smoke identity.
+3. Expose a delegated scope, preauthorize the Azure CLI client `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, and grant the required tenant consent. This lets the user helper request the API token without an interactive consent prompt.
+
+The token presented to APIM must contain `aud` equal to `APIM_EXPECTED_AUDIENCE`, `tid` for the configured tenant, the caller `oid`, and `roles` containing `APIM_REQUIRED_APP_ROLE`.
+
+Pilot users sign Azure CLI into the configured tenant before running Claude Code. The GitHub smoke identity uses workload federation and the app role; it does not use delegated consent.
+
 ## Refresh behavior
 
 Claude Code caches helper output for `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` (five minutes here), much less than an Entra access-token lifetime. On expiry it invokes the helper again. The helper calls `az account get-access-token`; Azure CLI/MSAL silently refreshes its credential and the helper persists nothing.

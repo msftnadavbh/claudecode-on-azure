@@ -8,7 +8,7 @@ python3 scripts/claude_code/generate_managed_settings.py \
   --audience api://gateway-app-id \
   --macos-helper-path "/Library/Company/Claude/apim-user-token-helper.sh" \
   --linux-helper-path /opt/company/claude/apim-user-token-helper.sh \
-  --windows-helper-path 'C:\Program Files\Company\Claude\apim-user-token-helper.cmd' \
+  --windows-helper-path 'C:\Program Files\Company\Claude\apim-user-token-helper.exe' \
   --opus-model opus-pinned --sonnet-model sonnet-pinned --haiku-model haiku-pinned \
   --output-dir out/claude-code
 ```
@@ -22,5 +22,7 @@ Deploy the generated UTF-8 `managed-settings.json` with device management to:
 | Windows | `windows/managed-settings.json` | `C:\Program Files\ClaudeCode\managed-settings.json` |
 
 The files use generic `ANTHROPIC_BASE_URL` gateway mode, each platform's dynamic `apiKeyHelper`, its five-minute TTL, subprocess environment scrubbing, pinned models, and disabled nonessential traffic. The helper's dynamic credential bypasses the initial login prompt; do not set `forceLoginMethod`, because current Claude Code guidance says it conflicts with `apiKeyHelper`. No static token, API key, Foundry-native setting, shell profile, or per-user environment setup is generated.
+
+The bundled `scripts/auth/apim-user-token-helper.sh` is for macOS, Linux, and WSL only. Native Windows requires a customer-provided, pilot-tested executable helper; this repository provides no Windows helper.
 
 Rollback: redeploy the previous managed file and helper with the same MDM/GPO tool, then restart Claude Code. Do not remove the managed file as a recovery mechanism; that can return the client to unmanaged or direct-provider settings.

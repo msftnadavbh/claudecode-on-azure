@@ -62,9 +62,11 @@ def run(args):
     if account.get("kind") != "AIServices" or state(account) != "Succeeded":
         raise PreflightError("Foundry account must be an AIServices account with provisioning state Succeeded")
     properties = account.get("properties", {})
-    canonical_host = f"{properties.get('customSubDomainName', args.account).lower()}.services.ai.azure.com"
-    returned_endpoint = account.get("endpoint") or properties.get("endpoint")
-    if expected_host != canonical_host or (returned_endpoint and host(returned_endpoint) != expected_host):
+    custom_subdomain = properties.get("customSubDomainName")
+    if not custom_subdomain:
+        raise PreflightError("Foundry account must expose customSubDomainName")
+    canonical_host = f"{custom_subdomain.lower()}.services.ai.azure.com"
+    if expected_host != canonical_host:
         raise PreflightError("--expected-base-url host is not owned by the specified Foundry account")
 
     deployments = az("cognitiveservices", "account", "deployment", "list", "--resource-group", args.resource_group,

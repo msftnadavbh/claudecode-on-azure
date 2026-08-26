@@ -43,6 +43,9 @@ locals {
     "per-user-token-limit"                  = tostring(var.per_user_token_limit)
     "per-user-concurrent-stream-limit"      = tostring(var.per_user_concurrent_stream_limit)
     "aggregate-concurrent-stream-limit"     = tostring(var.aggregate_concurrent_stream_limit)
+    "opus-model"                            = var.opus_deployment_name
+    "sonnet-model"                          = var.sonnet_deployment_name
+    "haiku-model"                           = var.haiku_deployment_name
   }
 
   operations = {
@@ -121,10 +124,6 @@ resource "azapi_resource" "apim" {
     precondition {
       condition     = var.networking_profile != "private" || (var.apim_subnet_resource_id != "" && (!var.deploy_secondary || var.secondary_apim_subnet_resource_id != ""))
       error_message = "Private networking requires a subnet ID for every deployed APIM instance."
-    }
-    precondition {
-      condition     = !var.zone_redundant || var.default_capacity >= 2
-      error_message = "Zone-redundant APIM requires at least two fixed capacity units."
     }
     precondition {
       condition     = var.per_user_concurrent_stream_limit < var.aggregate_concurrent_stream_limit && var.aggregate_concurrent_stream_limit < 2048
@@ -217,6 +216,11 @@ resource "azurerm_api_management_api_policy" "claude" {
   api_management_name = each.value.name
   resource_group_name = var.resource_group_name
   xml_content         = file("${path.module}/../../apim/policies/claude-base.xml")
+
+  depends_on = [
+    azurerm_api_management_backend.foundry,
+    azurerm_api_management_named_value.gateway,
+  ]
 }
 
 resource "azurerm_api_management_api_operation" "claude" {
@@ -249,13 +253,14 @@ resource "azurerm_log_analytics_workspace" "shared" {
 }
 
 resource "azurerm_application_insights" "shared" {
-  for_each            = var.observability_enabled && !local.use_existing_telemetry ? { shared = true } : {}
-  name                = "${var.apim_name}-insights"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  application_type    = "web"
-  workspace_id        = azurerm_log_analytics_workspace.shared[each.key].id
-  disable_ip_masking  = false
+  for_each                      = var.observability_enabled && !local.use_existing_telemetry ? { shared = true } : {}
+  name                          = "${var.apim_name}-insights"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  application_type              = "web"
+  workspace_id                  = azurerm_log_analytics_workspace.shared[each.key].id
+  disable_ip_masking            = false
+  local_authentication_disabled = true
 }
 
 resource "azapi_resource" "application_insights_logger" {

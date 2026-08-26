@@ -3,10 +3,22 @@ import argparse
 import asyncio
 import unittest
 
-from sse_concurrency_probe import run_probe
+from sse_concurrency_probe import accepted, run_probe
 
 
 class SseConcurrencyProbeTests(unittest.IsolatedAsyncioTestCase):
+    def test_acceptance_requires_all_success_without_expectations(self) -> None:
+        args = argparse.Namespace(concurrency=2, min_ok=None, max_ok=None, require_429=False)
+        self.assertTrue(accepted({"ok": 2}, args))
+        self.assertFalse(accepted({"http_429": 2}, args))
+        self.assertFalse(accepted({"ok": 1, "client_disconnect": 1}, args))
+
+    def test_acceptance_allows_expected_overload_but_not_disconnects(self) -> None:
+        args = argparse.Namespace(concurrency=2, min_ok=0, max_ok=0, require_429=True)
+        self.assertTrue(accepted({"http_429": 2}, args))
+        self.assertFalse(accepted({"http_429": 1}, args))
+        self.assertFalse(accepted({"http_429": 1, "client_disconnect": 1}, args))
+
     async def test_decodes_chunked_lines_split_across_chunks(self) -> None:
         async def handle(
             reader: asyncio.StreamReader, writer: asyncio.StreamWriter

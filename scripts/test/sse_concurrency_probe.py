@@ -258,6 +258,24 @@ async def run_probe(args: argparse.Namespace) -> dict:
     }
 
 
+def accepted(result: dict, args: argparse.Namespace) -> bool:
+    failures = sum(result.get(name, 0) for name in (
+        "timeout", "connection_failure", "backend_5xx", "http_failure", "stream_failure",
+        "client_disconnect",
+    ))
+    ok = result.get("ok", 0)
+    accounted = ok + result.get("http_429", 0)
+    expects_outcome = args.min_ok is not None or args.max_ok is not None or args.require_429
+    return (
+        failures == 0
+        and accounted == args.concurrency
+        and (expects_outcome or ok == args.concurrency)
+        and (args.min_ok is None or ok >= args.min_ok)
+        and (args.max_ok is None or ok <= args.max_ok)
+        and (not args.require_429 or result.get("http_429", 0) > 0)
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Async SSE probe for APIM or synthetic backend")
     parser.add_argument("--url", required=True)
@@ -298,13 +316,7 @@ if __name__ == "__main__":
         args = parse_args()
         result = asyncio.run(run_probe(args))
         print(json.dumps(result, sort_keys=True))
-        failures = sum(result.get(name, 0) for name in (
-            "timeout", "connection_failure", "backend_5xx", "http_failure", "stream_failure"
-        ))
-        ok = result.get("ok", 0)
-        accepted = failures == 0 and (args.min_ok is None or ok >= args.min_ok) and (args.max_ok is None or ok <= args.max_ok)
-        accepted = accepted and (not args.require_429 or result.get("http_429", 0) > 0)
-        if not accepted:
+        if not accepted(result, args):
             raise SystemExit(1)
     except (ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc)) from exc

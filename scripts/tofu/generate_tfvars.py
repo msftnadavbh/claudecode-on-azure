@@ -36,6 +36,18 @@ def values():
     foundry_subscription = required("FOUNDRY_SUBSCRIPTION_ID")
     foundry_resource_group = required("FOUNDRY_RESOURCE_GROUP")
     foundry_account = required("FOUNDRY_ACCOUNT_NAME")
+    secondary_foundry_base_url = os.environ.get("SECONDARY_FOUNDRY_BASE_URL", "")
+    secondary_foundry_subscription = os.environ.get("SECONDARY_FOUNDRY_SUBSCRIPTION_ID", "")
+    secondary_foundry_resource_group = os.environ.get("SECONDARY_FOUNDRY_RESOURCE_GROUP", "")
+    secondary_foundry_account = os.environ.get("SECONDARY_FOUNDRY_ACCOUNT_NAME", "")
+    if secondary_foundry_base_url:
+        for name, value in (
+            ("SECONDARY_FOUNDRY_SUBSCRIPTION_ID", secondary_foundry_subscription),
+            ("SECONDARY_FOUNDRY_RESOURCE_GROUP", secondary_foundry_resource_group),
+            ("SECONDARY_FOUNDRY_ACCOUNT_NAME", secondary_foundry_account),
+        ):
+            if not value:
+                raise ValueError(f"{name} must be set when SECONDARY_FOUNDRY_BASE_URL is set")
     desktop_enabled = boolean("CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED")
     result = {
         "resource_group_name": required("AZURE_RESOURCE_GROUP"),
@@ -53,6 +65,11 @@ def values():
         "foundry_base_url": required("FOUNDRY_BASE_URL"),
         "foundry_subscription_id": foundry_subscription,
         "foundry_resource_id": f"/subscriptions/{foundry_subscription}/resourceGroups/{foundry_resource_group}/providers/Microsoft.CognitiveServices/accounts/{foundry_account}",
+        "secondary_foundry_base_url": secondary_foundry_base_url,
+        "secondary_foundry_resource_id": (
+            f"/subscriptions/{secondary_foundry_subscription}/resourceGroups/{secondary_foundry_resource_group}/providers/Microsoft.CognitiveServices/accounts/{secondary_foundry_account}"
+            if secondary_foundry_base_url else ""
+        ),
         "opus_deployment_name": required("ANTHROPIC_DEFAULT_OPUS_MODEL"),
         "sonnet_deployment_name": required("ANTHROPIC_DEFAULT_SONNET_MODEL"),
         "haiku_deployment_name": required("ANTHROPIC_DEFAULT_HAIKU_MODEL"),

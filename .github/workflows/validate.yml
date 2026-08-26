@@ -16,12 +16,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install OpenTofu
         run: bash scripts/tofu/install.sh
-      - name: Validate OpenTofu
-        run: |
-          tofu -chdir=infra/tofu fmt -check
-          tofu -chdir=infra/tofu init -backend=false -input=false -lockfile=readonly
-          tofu -chdir=infra/tofu validate
-      - name: Validate shell, Python, policy, and Bicep rollback reference
+      - name: Validate repository
         run: scripts/test/validate.sh
       - name: Write CI evidence
         if: always()

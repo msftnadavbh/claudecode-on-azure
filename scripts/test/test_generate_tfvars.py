@@ -37,6 +37,26 @@ class GenerateTfvarsTests(unittest.TestCase):
         self.assertNotIn("claude_desktop_client_id", result)
         self.assertNotIn("claude_desktop_delegated_scope", result)
         self.assertEqual(result["foundry_resource_id"], "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/foundry")
+        self.assertEqual(result["secondary_foundry_base_url"], "")
+        self.assertEqual(result["secondary_foundry_resource_id"], "")
+
+    def test_derives_secondary_foundry_resource_id(self):
+        inputs = dict(ENV,
+            SECONDARY_FOUNDRY_BASE_URL="https://secondary.services.ai.azure.com/anthropic",
+            SECONDARY_FOUNDRY_SUBSCRIPTION_ID="33333333-3333-3333-3333-333333333333",
+            SECONDARY_FOUNDRY_RESOURCE_GROUP="secondary-foundry-rg",
+            SECONDARY_FOUNDRY_ACCOUNT_NAME="secondary-foundry",
+        )
+        with patch.dict(os.environ, inputs, clear=True):
+            result = generate_tfvars.values()
+        self.assertEqual(result["secondary_foundry_base_url"], "https://secondary.services.ai.azure.com/anthropic")
+        self.assertEqual(result["secondary_foundry_resource_id"], "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/secondary-foundry-rg/providers/Microsoft.CognitiveServices/accounts/secondary-foundry")
+
+    def test_secondary_foundry_identity_requires_base_url(self):
+        inputs = dict(ENV, SECONDARY_FOUNDRY_BASE_URL="https://secondary.services.ai.azure.com/anthropic")
+        with patch.dict(os.environ, inputs, clear=True):
+            with self.assertRaisesRegex(ValueError, "SECONDARY_FOUNDRY_SUBSCRIPTION_ID must be set"):
+                generate_tfvars.values()
 
     def test_uses_apim_runtime_inputs(self):
         inputs = dict(ENV, APIM_SKU="PremiumV2", APIM_ZONE_REDUNDANT="true")

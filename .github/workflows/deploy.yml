@@ -62,6 +62,10 @@ jobs:
       FOUNDRY_SUBSCRIPTION_ID: ${{ vars.FOUNDRY_SUBSCRIPTION_ID }}
       FOUNDRY_RESOURCE_GROUP: ${{ vars.FOUNDRY_RESOURCE_GROUP }}
       FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
+      SECONDARY_FOUNDRY_BASE_URL: ${{ vars.SECONDARY_FOUNDRY_BASE_URL }}
+      SECONDARY_FOUNDRY_SUBSCRIPTION_ID: ${{ vars.SECONDARY_FOUNDRY_SUBSCRIPTION_ID }}
+      SECONDARY_FOUNDRY_RESOURCE_GROUP: ${{ vars.SECONDARY_FOUNDRY_RESOURCE_GROUP }}
+      SECONDARY_FOUNDRY_ACCOUNT_NAME: ${{ vars.SECONDARY_FOUNDRY_ACCOUNT_NAME }}
       ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}
       ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
       ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
@@ -119,6 +123,9 @@ jobs:
           umask 077
           python3 scripts/tofu/generate_tfvars.py "${RUNNER_TEMP}/inputs.tfvars.json"
           python3 scripts/foundry_preflight.py --subscription "${FOUNDRY_SUBSCRIPTION_ID}" --resource-group "${FOUNDRY_RESOURCE_GROUP}" --account "${FOUNDRY_ACCOUNT_NAME}" --expected-base-url "${FOUNDRY_BASE_URL}" --deployment "opus=${ANTHROPIC_DEFAULT_OPUS_MODEL}" --deployment "sonnet=${ANTHROPIC_DEFAULT_SONNET_MODEL}" --deployment "haiku=${ANTHROPIC_DEFAULT_HAIKU_MODEL}" > "${RUNNER_TEMP}/foundry-preflight.json"
+          if [[ "${DEPLOY_SECONDARY}" == true && -n "${SECONDARY_FOUNDRY_BASE_URL}" ]]; then
+            python3 scripts/foundry_preflight.py --subscription "${SECONDARY_FOUNDRY_SUBSCRIPTION_ID}" --resource-group "${SECONDARY_FOUNDRY_RESOURCE_GROUP}" --account "${SECONDARY_FOUNDRY_ACCOUNT_NAME}" --expected-base-url "${SECONDARY_FOUNDRY_BASE_URL}" --deployment "opus=${ANTHROPIC_DEFAULT_OPUS_MODEL}" --deployment "sonnet=${ANTHROPIC_DEFAULT_SONNET_MODEL}" --deployment "haiku=${ANTHROPIC_DEFAULT_HAIKU_MODEL}" > "${RUNNER_TEMP}/secondary-foundry-preflight.json"
+          fi
           tofu -chdir=infra/tofu init -input=false -lockfile=readonly -backend-config="subscription_id=${TOFU_STATE_SUBSCRIPTION_ID}" -backend-config="resource_group_name=${TOFU_STATE_RG}" -backend-config="storage_account_name=${TOFU_STATE_STORAGE_ACCOUNT}" -backend-config="container_name=${TOFU_STATE_CONTAINER}" -backend-config="key=${TOFU_STATE_KEY}" -backend-config="use_azuread_auth=true" -backend-config="use_oidc=true"
           tofu -chdir=infra/tofu plan -input=false -lock-timeout=5m -out="${RUNNER_TEMP}/deployment.tfplan" -var-file="${RUNNER_TEMP}/inputs.tfvars.json"
           tofu -chdir=infra/tofu show -json "${RUNNER_TEMP}/deployment.tfplan" | python3 scripts/tofu/plan_summary.py > "${RUNNER_TEMP}/plan-summary.json"
@@ -135,6 +142,7 @@ jobs:
           name: tofu-plan-summary-${{ github.sha }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/foundry-preflight.json
+            ${{ runner.temp }}/secondary-foundry-preflight.json
             ${{ runner.temp }}/plan-summary.json
             ${{ runner.temp }}/run-context.json
           if-no-files-found: error
@@ -209,7 +217,7 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_SMOKE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true
       - name: Post-deployment smoke test
         env:
           APIM_BASE_URL: https://${{ vars.APIM_NAME }}.azure-api.net/claude
@@ -227,11 +235,12 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  private-smoke-required:
+  private-ha-smoke-required:
     needs: deploy
     if: inputs.networking_profile == 'private'
     runs-on: ubuntu-latest
     steps:
-      - name: Require protected HA smoke
+      - name: Require protected in-network HA smoke evidence
         run: |
-          echo 'Private deployment completed. Run the protected ha-smoke workflow from an in-network runner before release.'
+          echo 'Private deployment is not released. Run the protected ha-smoke workflow from an in-network runner and retain its evidence before release.' >&2
+          exit 1

@@ -37,10 +37,21 @@ Start with the [production readiness gates](docs/production-readiness.md), [clie
 
 ## Validate
 
+Requires Bash with standard command-line utilities, Python 3, ShellCheck, and OpenTofu.
+
 ```bash
 scripts/test/validate.sh
+```
 
+In a separate terminal, run the synthetic backend:
+
+```bash
 python3 scripts/test/synthetic_sse_backend.py
+```
+
+Then run the probe:
+
+```bash
 python3 scripts/test/sse_concurrency_probe.py \
   --url http://127.0.0.1:8088/v1/messages \
   --concurrency 500 \
