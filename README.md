@@ -7,7 +7,7 @@ Deploy a governed Claude Code gateway that authenticates callers with Microsoft 
 - `/claude` on APIM, with native `/v1/messages` and `/v1/messages/count_tokens`, unbuffered SSE, and APIM-local unauthenticated `/health`.
 - A fixed-capacity, public, single-region `StandardV2` APIM baseline. Use `PremiumV2` only for zone redundancy or private VNet injection.
 - Optional second APIM and public Traffic Manager. You provide private DNS, failover, custom DNS, and certificates.
-- APIM policy, managed identity access to Foundry, optional telemetry and alerts, and managed Claude Code configuration generators.
+- APIM policy, managed identity access to Foundry, optional telemetry and alerts, and managed Claude Code configuration generators. In `greenfield` mode it also creates a new resource group, one AIServices Foundry account, one project, and one Claude deployment.
 
 ![Conceptual Claude Code Enterprise Gateway on Azure architecture. The written implementation boundary below is authoritative.](assets/architecture/claude-code-enterprise-gateway.png)
 
@@ -15,7 +15,9 @@ Deploy a governed Claude Code gateway that authenticates callers with Microsoft 
 
 ## Before you begin
 
-You provide a Foundry account with three pinned deployment names; an Entra app registration and assignments; GitHub identities, protected environments, and OIDC federation; a resource group; and external Azure Blob state. For selected topologies, also provide subnets, DNS, certificates, Foundry private endpoints, telemetry destinations, and a native Windows helper. This repository creates APIM and its integration resources; it does not create those prerequisites. See [getting started](docs/getting-started.md) and the [GitHub configuration inventory](docs/github-configuration.md).
+Choose one immutable state mode. `existing` (default) adopts your existing resource group and cross-subscription Foundry account with three deployment names. `greenfield` creates a new target-subscription resource group, AIServices/S0 Foundry account, project, and exactly one public Claude deployment; that deployment is mapped to the Opus, Sonnet, and Haiku roles. Use a new Blob state key for greenfield and never switch mode for an existing state.
+
+You still provide external Blob state/container, Entra caller app/roles/consent, GitHub identities/environments/OIDC, VNet/DNS/certificates/private endpoints, Action Group, and a native Windows helper. Greenfield is public-only, creates no Entra/GitHub/state/network resources, and its Marketplace checkbox authorizes OpenTofu/modelProviderData to accept Anthropic Marketplace terms and incur billing. See [getting started](docs/getting-started.md) and the [GitHub configuration inventory](docs/github-configuration.md).
 
 ## Deploy
 
@@ -24,7 +26,7 @@ You provide a Foundry account with three pinned deployment names; an Entra app r
 3. Dispatch the protected `deploy` workflow with matching `environment_profile` and `networking_profile`.
 4. Retain public smoke evidence, or run protected in-network `ha-smoke` for private or HA deployments.
 
-OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.7.0`. The three configured Foundry deployment names are allowlisted; a secondary Foundry account must expose the same names.
+OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.12.0`. Existing-mode Foundry deployment names are allowlisted; a secondary Foundry account must expose the same names.
 
 ## Configure Claude Code
 

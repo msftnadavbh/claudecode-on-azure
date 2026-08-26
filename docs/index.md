@@ -1,6 +1,6 @@
 # Documentation
 
-This repository creates APIM APIs and policies, APIM managed identities, `Foundry User` role assignments, optional telemetry and alerts, optional Traffic Manager, and managed-client configuration generators. You provide Foundry deployments, Entra registrations, GitHub environments and identities, Blob state, a resource group, and any required network, DNS, certificate, incident-routing, and client-management resources, including Foundry private endpoints and a native Windows helper.
+This repository creates APIM APIs and policies, APIM managed identities, `Foundry User` role assignments, optional telemetry and alerts, optional Traffic Manager, and managed-client configuration generators. In greenfield mode it also creates a new resource group, Foundry account, project, and one Claude deployment. You provide Entra registrations, GitHub environments and identities, Blob state, and any required network, DNS, certificate, incident-routing, and client-management resources, including Foundry private endpoints and a native Windows helper.
 
 The active deployment path is OpenTofu only. It creates no custom enterprise gateway hostname. `/claude/health` is APIM-local and does not test Foundry. The `migration/bicep` material is deprecated and non-authoritative; do not use it for deployment.
 

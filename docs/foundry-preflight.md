@@ -2,6 +2,8 @@
 
 Run this read-only check against the existing Foundry account and three configured deployments. You need Azure access to the account and resolved input values. The command creates and changes nothing; it does not prove quota headroom or enforce Foundry security settings.
 
+Greenfield workflow runs `scripts/greenfield_foundry_preflight.py` against its exact account subscription, new resource-group name, location, model, version, SKU, and capacity. It requires an Azure-hosted catalog entry with `kind` `AIServices`, `model.format` `Anthropic`, and the selected nested `model.skus` entry. It uses that SKU entry's exact `usageName` to check quota; the account's `S0` SKU is not a deployment SKU. A fresh greenfield state rejects an already-existing resource group. On a partial-apply retry, the workflow passes `--allow-existing-resource-group` only after `tofu state show 'azurerm_resource_group.greenfield[0]'` confirms that exact address in the current state.
+
 ```bash
 python3 scripts/foundry_preflight.py \
   --subscription "$FOUNDRY_SUBSCRIPTION_ID" \

@@ -1,13 +1,13 @@
 # Security
 
-This page describes the gateway's identity and telemetry controls. You provide the Entra application and assignments, and review Foundry security. This repository does not create Entra registrations, enforce Foundry `disableLocalAuth`, remove other Foundry RBAC, or secure workstations.
+This page describes the gateway's identity and telemetry controls. You provide the Entra application and assignments, and review Foundry security. This repository does not create Entra registrations, remove other Foundry RBAC, or secure workstations. Greenfield creates its Foundry account with local authentication disabled; existing mode does not alter existing Foundry security settings.
 
 ## Identity and credential boundary
 
 - APIM validates tenant, audience, `oid`, `tid`, and the configured app role. The optional Desktop preview can instead use its configured client ID and exact delegated scope.
 - APIM deletes caller `Authorization`, API-key, subscription-key, and legacy credential query values before requesting Foundry with its managed identity.
 - APIM receives `Foundry User` on your Foundry account. Before rollout, separately assess direct Foundry local authentication and existing direct inference RBAC.
-- Three configured deployment names are allowlisted. Do not put shared provider credentials or direct Foundry settings on client devices.
+- Existing mode allowlists three configured deployment names; greenfield maps one managed deployment to all three Claude roles. Do not put shared provider credentials or direct Foundry settings on client devices.
 
 ## Diagnostics and clients
 

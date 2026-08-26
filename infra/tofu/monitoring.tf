@@ -23,7 +23,7 @@ resource "azurerm_role_assignment" "monitoring_metrics_publisher" {
 resource "azurerm_monitor_metric_alert" "cpu" {
   for_each            = var.observability_enabled ? local.apim_instances : {}
   name                = "${each.value.name}-high-capacity"
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   scopes              = [azapi_resource.apim[each.key].id]
   description         = "APIM gateway CPU capacity is sustained above 70 percent."
   severity            = 2
@@ -47,7 +47,7 @@ resource "azurerm_monitor_metric_alert" "cpu" {
 resource "azurerm_monitor_metric_alert" "memory" {
   for_each            = var.observability_enabled ? local.apim_instances : {}
   name                = "${each.value.name}-high-memory"
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   scopes              = [azapi_resource.apim[each.key].id]
   description         = "APIM gateway memory is sustained above the configured threshold."
   severity            = 2
@@ -71,7 +71,7 @@ resource "azurerm_monitor_metric_alert" "memory" {
 resource "azurerm_monitor_metric_alert" "requests" {
   for_each            = var.observability_enabled ? local.apim_instances : {}
   name                = "${each.value.name}-gateway-errors"
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   scopes              = [azapi_resource.apim[each.key].id]
   description         = "APIM reports sustained authentication, authorization, or throttling responses."
   severity            = 2
@@ -101,7 +101,7 @@ resource "azurerm_monitor_metric_alert" "requests" {
 resource "azurerm_monitor_metric_alert" "gateway_5xx" {
   for_each            = var.observability_enabled ? local.apim_instances : {}
   name                = "${each.value.name}-gateway-5xx"
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   scopes              = [azapi_resource.apim[each.key].id]
   description         = "APIM reports sustained client-visible gateway 5xx responses."
   severity            = 1
@@ -131,7 +131,7 @@ resource "azurerm_monitor_metric_alert" "gateway_5xx" {
 resource "azurerm_monitor_metric_alert" "backend_5xx" {
   for_each            = var.observability_enabled ? local.apim_instances : {}
   name                = "${each.value.name}-backend-5xx"
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   scopes              = [azapi_resource.apim[each.key].id]
   description         = "Foundry reports sustained backend 5xx responses through APIM."
   severity            = 1
@@ -161,7 +161,7 @@ resource "azurerm_monitor_metric_alert" "backend_5xx" {
 resource "azurerm_traffic_manager_profile" "failover" {
   for_each               = local.deploy_traffic_manager ? { failover = true } : {}
   name                   = local.traffic_manager_name
-  resource_group_name    = var.resource_group_name
+  resource_group_name    = local.effective_resource_group_name
   traffic_routing_method = "Priority"
 
   dns_config {

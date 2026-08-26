@@ -5,7 +5,7 @@ These service limits shape the deployment. Validate current service availability
 | Constraint | Implemented consequence |
 | --- | --- |
 | Claude Code gateway mode uses `ANTHROPIC_BASE_URL` and `apiKeyHelper` | Managed clients use a dynamic Entra token helper, not a static key. |
-| Foundry uses deployment names | APIM allowlists your three configured deployment names rather than marketing model labels. |
+| Foundry uses deployment names | APIM allowlists three configured deployment names in existing mode; greenfield maps one managed deployment to all three roles rather than using marketing model labels. |
 | SSE requires unbuffered responses | APIM forwards streaming responses with buffering disabled and diagnostics capture zero body bytes. |
 | APIM v2 connection authority ceiling is 2,048 | Aggregate concurrent admission is configured below 2,048 per gateway; it is approximate, not global. |
 | StandardV2 is public/non-zone-redundant | The baseline uses StandardV2; PremiumV2 is required for private VNet injection or zone redundancy. |

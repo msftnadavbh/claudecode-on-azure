@@ -1,10 +1,21 @@
 variable "resource_group_name" {
   type        = string
-  description = "Existing resource group in which APIM and optional telemetry are deployed."
+  description = "Existing resource group in existing mode; new resource group created in greenfield mode."
 
   validation {
     condition     = length(var.resource_group_name) > 0
     error_message = "resource_group_name must not be empty."
+  }
+}
+
+variable "deployment_mode" {
+  type        = string
+  description = "existing adopts the supplied Foundry target; greenfield creates the resource group and Foundry target."
+  default     = "existing"
+
+  validation {
+    condition     = contains(["existing", "greenfield"], var.deployment_mode)
+    error_message = "deployment_mode must be existing or greenfield."
   }
 }
 
@@ -118,8 +129,10 @@ variable "foundry_base_url" {
   type        = string
   description = "Primary Foundry Anthropic base URL, including /anthropic."
 
+  default = ""
+
   validation {
-    condition     = can(regex("^https://[a-z0-9.-]+\\.services\\.ai\\.azure\\.com/anthropic$", lower(var.foundry_base_url)))
+    condition     = var.foundry_base_url == "" || can(regex("^https://[a-z0-9.-]+\\.services\\.ai\\.azure\\.com/anthropic$", lower(var.foundry_base_url)))
     error_message = "foundry_base_url must be HTTPS on *.services.ai.azure.com with exactly the /anthropic path."
   }
 }
@@ -137,20 +150,24 @@ variable "secondary_foundry_base_url" {
 
 variable "foundry_resource_id" {
   type        = string
-  description = "Resource ID of the existing primary Foundry account; only its inference role assignment is managed."
+  description = "Resource ID of the primary Foundry account in existing mode; greenfield derives it."
+
+  default = ""
 
   validation {
-    condition     = length(var.foundry_resource_id) > 0
-    error_message = "foundry_resource_id must not be empty."
+    condition     = var.foundry_resource_id == "" || can(regex("^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.CognitiveServices/accounts/[^/]+$", var.foundry_resource_id))
+    error_message = "foundry_resource_id must be empty or a Cognitive Services account resource ID."
   }
 }
 
 variable "foundry_subscription_id" {
   type        = string
-  description = "Subscription containing the existing Foundry account and managed role assignments."
+  description = "Subscription containing the existing Foundry account and managed role assignments; greenfield uses the target subscription."
+
+  default = ""
 
   validation {
-    condition     = can(regex("^[0-9a-fA-F-]{36}$", var.foundry_subscription_id))
+    condition     = var.foundry_subscription_id == "" || can(regex("^[0-9a-fA-F-]{36}$", var.foundry_subscription_id))
     error_message = "foundry_subscription_id must be a subscription UUID."
   }
 }
@@ -165,30 +182,118 @@ variable "opus_deployment_name" {
   type        = string
   description = "Foundry deployment name pinned for the Opus role."
 
-  validation {
-    condition     = length(var.opus_deployment_name) > 0
-    error_message = "opus_deployment_name must not be empty."
-  }
+  default = ""
 }
 
 variable "sonnet_deployment_name" {
   type        = string
   description = "Foundry deployment name pinned for the Sonnet role."
 
-  validation {
-    condition     = length(var.sonnet_deployment_name) > 0
-    error_message = "sonnet_deployment_name must not be empty."
-  }
+  default = ""
 }
 
 variable "haiku_deployment_name" {
   type        = string
   description = "Foundry deployment name pinned for the Haiku role."
 
+  default = ""
+}
+
+variable "foundry_account_name" {
+  type        = string
+  description = "Foundry account name; created in greenfield mode."
+  default     = ""
+}
+
+variable "foundry_project_name" {
+  type        = string
+  description = "New Foundry project name in greenfield mode."
+  default     = ""
+}
+
+variable "foundry_location" {
+  type        = string
+  description = "New Foundry account location in greenfield mode."
+  default     = ""
+}
+
+variable "claude_model_deployment_name" {
+  type        = string
+  description = "The one Anthropic deployment created and used for all Claude Code roles in greenfield mode."
+  default     = ""
+}
+
+variable "claude_model_name" {
+  type        = string
+  description = "Exact Anthropic model catalog name for greenfield mode."
+  default     = ""
+}
+
+variable "claude_model_version" {
+  type        = string
+  description = "Exact Anthropic model catalog version for greenfield mode."
+  default     = ""
+}
+
+variable "claude_model_sku" {
+  type        = string
+  description = "Anthropic deployment SKU for greenfield mode."
+  default     = ""
+
   validation {
-    condition     = length(var.haiku_deployment_name) > 0
-    error_message = "haiku_deployment_name must not be empty."
+    condition     = var.claude_model_sku == "" || contains(["GlobalStandard", "DataZoneStandard"], var.claude_model_sku)
+    error_message = "claude_model_sku must be GlobalStandard or DataZoneStandard."
   }
+}
+
+variable "claude_model_capacity" {
+  type        = number
+  description = "Positive Anthropic deployment capacity for greenfield mode."
+  default     = 0
+
+  validation {
+    condition     = var.claude_model_capacity == 0 || (var.claude_model_capacity > 0 && floor(var.claude_model_capacity) == var.claude_model_capacity)
+    error_message = "claude_model_capacity must be a positive integer when set."
+  }
+}
+
+variable "claude_organization_name" {
+  type        = string
+  description = "Organization name required by the Anthropic Marketplace attestation."
+  default     = ""
+
+  validation {
+    condition     = var.claude_organization_name == "" || (var.claude_organization_name == trimspace(var.claude_organization_name) && var.claude_organization_name != "" && !contains(["example", "placeholder"], lower(var.claude_organization_name)))
+    error_message = "claude_organization_name must be a trimmed non-placeholder value."
+  }
+}
+
+variable "claude_country_code" {
+  type        = string
+  description = "Country code required by the Anthropic Marketplace attestation."
+  default     = ""
+
+  validation {
+    condition     = var.claude_country_code == "" || can(regex("^[A-Z]{2}$", var.claude_country_code))
+    error_message = "claude_country_code must be an uppercase two-letter country code."
+  }
+}
+
+variable "claude_industry" {
+  type        = string
+  description = "Industry required by the Anthropic Marketplace attestation."
+  default     = ""
+
+  validation {
+    condition     = var.claude_industry == "" || contains(["education", "finance", "government", "healthcare", "manufacturing", "media", "other", "retail", "technology"], var.claude_industry)
+    error_message = "claude_industry must be education, finance, government, healthcare, manufacturing, media, other, retail, or technology."
+  }
+}
+
+variable "accept_anthropic_marketplace_terms" {
+  type        = bool
+  description = "Authorize OpenTofu/modelProviderData to accept Anthropic Marketplace terms and incur billing in greenfield mode."
+  default     = false
 }
 
 variable "per_user_rate_limit" {

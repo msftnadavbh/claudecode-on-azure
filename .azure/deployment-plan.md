@@ -10,7 +10,7 @@ OpenTofu is the preferred, active Azure deployment implementation. Preserve runt
 
 - AzAPI manages the APIM parent with the existing preview API contract.
 - AzureRM manages mature APIM children, monitoring, RBAC, and Traffic Manager resources.
-- Existing Foundry accounts, subnets, Action Group, and optional shared telemetry remain external.
+- Existing mode keeps Foundry accounts external; greenfield creates its resource group, Foundry account, project, and one Claude deployment. Subnets, Action Group, and optional shared telemetry remain external.
 - One remote Azure Blob state key per environment; production primary and secondary remain in one state.
 - GitHub OIDC authenticates state and Azure operations; no storage keys or client secrets.
 
@@ -43,15 +43,14 @@ OpenTofu is the preferred, active Azure deployment implementation. Preserve runt
 - `tofu fmt -check -recursive`: passed.
 - `tofu init -backend=false -input=false -lockfile=readonly`: passed.
 - `tofu validate`: passed.
-- Python unit tests: 19 active and 2 migration tests passed.
-- Bicep rollback-reference compilation: passed.
+- Python unit tests and migration tests pass in aggregate repository validation.
 - Aggregate repository validation: passed.
 - Remote backend access, state imports, and live plan: blocked until external state/OIDC prerequisites are configured.
 - Read-only Azure check: current subscription contains no APIM instance and no OpenTofu backend variables are configured; no live import/plan was attempted.
 
 ## Role Assignment Verification
 
-- APIM system identities receive Foundry User on the exact existing Foundry account resource IDs.
+- APIM system identities receive Foundry User on the selected existing or greenfield Foundry account resource IDs.
 - APIM system identities receive Monitoring Metrics Publisher on the exact selected Application Insights resource.
 - Assignment UUIDs reproduce the existing Bicep `guid(scope, principal, role)` values.
 - Foundry and telemetry subscriptions use explicit AzureRM provider aliases.

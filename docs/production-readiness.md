@@ -4,7 +4,7 @@ Use this checklist before rollout. You need a deployed validation environment an
 
 ## Required evidence
 
-- Foundry account, three pinned deployment names, effective quota and headroom, and a direct Foundry local-auth/RBAC review.
+- Foundry account, three pinned deployment names in existing mode or the one mapped deployment in greenfield mode, effective quota and headroom, and a direct Foundry local-auth/RBAC review.
 - Entra audience, role assignments, token refresh, caller isolation, APIM managed-identity `Foundry User`, and no client static credential.
 - Protected GitHub environments/reviewers, immutable OIDC federation, external versioned/soft-deleted Blob state, reviewed source/inputs/summary, and no destructive plan.
 - Measured APIM capacity and selected `per-user < aggregate < 2048` gateway-local admission limits; separate approved Foundry load evidence.

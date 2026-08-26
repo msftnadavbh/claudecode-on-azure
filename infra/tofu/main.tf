@@ -1,9 +1,20 @@
 data "azurerm_client_config" "current" {}
 
+resource "terraform_data" "deployment_mode" {
+  input            = var.deployment_mode
+  triggers_replace = [var.deployment_mode]
+
+  lifecycle { prevent_destroy = true }
+}
+
 locals {
-  resource_group_id                         = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"
-  secondary_foundry_base_url                = var.secondary_foundry_base_url != "" ? var.secondary_foundry_base_url : var.foundry_base_url
-  secondary_foundry_resource_id             = var.secondary_foundry_resource_id != "" ? var.secondary_foundry_resource_id : var.foundry_resource_id
+  greenfield                                = var.deployment_mode == "greenfield"
+  effective_resource_group_name             = local.greenfield ? azurerm_resource_group.greenfield[0].name : var.resource_group_name
+  resource_group_id                         = local.greenfield ? azurerm_resource_group.greenfield[0].id : "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"
+  effective_foundry_base_url                = local.greenfield ? "https://${azapi_resource.greenfield_foundry[0].name}.services.ai.azure.com/anthropic" : var.foundry_base_url
+  effective_foundry_resource_id             = local.greenfield ? azapi_resource.greenfield_foundry[0].id : var.foundry_resource_id
+  secondary_foundry_base_url                = var.secondary_foundry_base_url != "" ? var.secondary_foundry_base_url : local.effective_foundry_base_url
+  secondary_foundry_resource_id             = var.secondary_foundry_resource_id != "" ? var.secondary_foundry_resource_id : local.effective_foundry_resource_id
   traffic_manager_name                      = var.traffic_manager_name != "" ? var.traffic_manager_name : "${var.apim_name}-failover"
   deploy_traffic_manager                    = var.deploy_secondary && var.networking_profile == "public" && var.traffic_manager_enabled
   use_existing_telemetry                    = var.existing_workspace_resource_id != "" && var.existing_app_insights_resource_id != ""
@@ -18,9 +29,9 @@ locals {
     primary = {
       name                = var.apim_name
       location            = var.location
-      foundry_base_url    = var.foundry_base_url
+      foundry_base_url    = local.effective_foundry_base_url
       subnet_resource_id  = var.apim_subnet_resource_id
-      foundry_resource_id = var.foundry_resource_id
+      foundry_resource_id = local.effective_foundry_resource_id
     }
     }, var.deploy_secondary ? {
     secondary = {
@@ -43,9 +54,9 @@ locals {
     "per-user-token-limit"                  = tostring(var.per_user_token_limit)
     "per-user-concurrent-stream-limit"      = tostring(var.per_user_concurrent_stream_limit)
     "aggregate-concurrent-stream-limit"     = tostring(var.aggregate_concurrent_stream_limit)
-    "opus-model"                            = var.opus_deployment_name
-    "sonnet-model"                          = var.sonnet_deployment_name
-    "haiku-model"                           = var.haiku_deployment_name
+    "opus-model"                            = local.greenfield ? var.claude_model_deployment_name : var.opus_deployment_name
+    "sonnet-model"                          = local.greenfield ? var.claude_model_deployment_name : var.sonnet_deployment_name
+    "haiku-model"                           = local.greenfield ? var.claude_model_deployment_name : var.haiku_deployment_name
   }
 
   operations = {
@@ -76,6 +87,71 @@ locals {
       operation_key = pair[1]
     })
   }
+}
+
+resource "azurerm_resource_group" "greenfield" {
+  count    = local.greenfield ? 1 : 0
+  name     = var.resource_group_name
+  location = var.location
+}
+
+resource "azapi_resource" "greenfield_foundry" {
+  count     = local.greenfield ? 1 : 0
+  type      = "Microsoft.CognitiveServices/accounts@2026-05-01"
+  name      = var.foundry_account_name
+  parent_id = azurerm_resource_group.greenfield[0].id
+  location  = var.foundry_location
+
+  identity { type = "SystemAssigned" }
+  body = {
+    kind = "AIServices"
+    sku  = { name = "S0" }
+    properties = {
+      allowProjectManagement    = true
+      customSubDomainName       = var.foundry_account_name
+      disableLocalAuth          = true
+      storedCompletionsDisabled = true
+      publicNetworkAccess       = "Enabled"
+    }
+  }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "azapi_resource" "greenfield_project" {
+  count     = local.greenfield ? 1 : 0
+  type      = "Microsoft.CognitiveServices/accounts/projects@2026-05-01"
+  name      = var.foundry_project_name
+  parent_id = azapi_resource.greenfield_foundry[0].id
+  location  = var.foundry_location
+
+  identity { type = "SystemAssigned" }
+  body = { properties = {} }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "azapi_resource" "greenfield_claude" {
+  count                     = local.greenfield ? 1 : 0
+  type                      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  name                      = var.claude_model_deployment_name
+  parent_id                 = azapi_resource.greenfield_foundry[0].id
+  schema_validation_enabled = false
+
+  body = {
+    sku = { name = var.claude_model_sku, capacity = var.claude_model_capacity }
+    properties = {
+      model = { format = "Anthropic", name = var.claude_model_name, version = var.claude_model_version }
+      modelProviderData = {
+        organizationName = var.claude_organization_name
+        countryCode      = var.claude_country_code
+        industry         = var.claude_industry
+      }
+      raiPolicyName        = "Microsoft.DefaultV2"
+      versionUpgradeOption = "NoAutoUpgrade"
+    }
+  }
+
+  depends_on = [azapi_resource.greenfield_project, azurerm_role_assignment.foundry_user["primary"]]
+  lifecycle { prevent_destroy = true }
 }
 
 data "azurerm_application_insights" "existing" {
@@ -145,13 +221,30 @@ resource "azapi_resource" "apim" {
       condition     = !var.enable_claude_desktop_delegated_auth || (var.claude_desktop_client_id != "" && var.claude_desktop_client_id != "disabled" && var.claude_desktop_delegated_scope != "" && var.claude_desktop_delegated_scope != "disabled")
       error_message = "Claude Desktop delegated auth requires claude_desktop_client_id and claude_desktop_delegated_scope when enabled."
     }
+    precondition {
+      condition = !local.greenfield || (
+        var.networking_profile == "public" && var.secondary_foundry_base_url == "" && var.secondary_foundry_resource_id == "" &&
+        var.foundry_subscription_id == data.azurerm_client_config.current.subscription_id &&
+        var.foundry_account_name != "" && var.foundry_project_name != "" && var.foundry_location != "" && var.claude_model_deployment_name != "" &&
+        var.claude_model_name != "" && var.claude_model_version != "" && var.claude_model_sku != "" && var.claude_model_capacity > 0 &&
+        var.claude_organization_name != "" && var.claude_country_code != "" && var.claude_industry != "" && var.accept_anthropic_marketplace_terms
+      )
+      error_message = "greenfield requires public single-account networking, target-subscription Foundry, project/model/attestation inputs, positive capacity, and Marketplace acceptance."
+    }
+    precondition {
+      condition = local.greenfield || (
+        var.foundry_base_url != "" && var.foundry_resource_id != "" && var.foundry_subscription_id != "" &&
+        var.opus_deployment_name != "" && var.sonnet_deployment_name != "" && var.haiku_deployment_name != ""
+      )
+      error_message = "existing mode requires the existing Foundry URL, resource ID, subscription, and all three deployment names."
+    }
   }
 }
 
 resource "azurerm_api_management_backend" "foundry" {
   for_each            = local.apim_instances
   name                = "foundry-backend"
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   api_management_name = each.value.name
   protocol            = "http"
   url                 = each.value.foundry_base_url
@@ -173,7 +266,7 @@ resource "azurerm_api_management_backend" "foundry" {
     trip_duration = "PT1M"
   }
 
-  depends_on = [azapi_resource.apim]
+  depends_on = [azapi_resource.apim, azapi_resource.greenfield_claude]
 }
 
 resource "azurerm_api_management_named_value" "gateway" {
@@ -187,7 +280,7 @@ resource "azurerm_api_management_named_value" "gateway" {
   }
 
   name                = each.value.name
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   api_management_name = local.apim_instances[each.value.apim_key].name
   display_name        = each.value.name
   value               = each.value.value
@@ -199,7 +292,7 @@ resource "azurerm_api_management_named_value" "gateway" {
 resource "azurerm_api_management_api" "claude" {
   for_each              = local.apim_instances
   name                  = "claude"
-  resource_group_name   = var.resource_group_name
+  resource_group_name   = local.effective_resource_group_name
   api_management_name   = each.value.name
   revision              = "1"
   display_name          = "Claude Messages API"
@@ -214,7 +307,7 @@ resource "azurerm_api_management_api_policy" "claude" {
   for_each            = local.apim_instances
   api_name            = azurerm_api_management_api.claude[each.key].name
   api_management_name = each.value.name
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   xml_content         = file("${path.module}/../../apim/policies/claude-base.xml")
 
   depends_on = [
@@ -228,7 +321,7 @@ resource "azurerm_api_management_api_operation" "claude" {
   operation_id        = each.value.operation_key
   api_name            = azurerm_api_management_api.claude[each.value.apim_key].name
   api_management_name = each.value.name
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   display_name        = each.value.display_name
   method              = each.value.method
   url_template        = each.value.url_template
@@ -238,7 +331,7 @@ resource "azurerm_api_management_api_operation_policy" "claude" {
   for_each            = local.apim_operation_instances
   api_name            = azurerm_api_management_api.claude[each.value.apim_key].name
   api_management_name = each.value.name
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   operation_id        = azurerm_api_management_api_operation.claude[each.key].operation_id
   xml_content         = file(each.value.policy_path)
 }
@@ -247,7 +340,7 @@ resource "azurerm_log_analytics_workspace" "shared" {
   for_each            = var.observability_enabled && !local.use_existing_telemetry ? { shared = true } : {}
   name                = "${var.apim_name}-logs"
   location            = var.location
-  resource_group_name = var.resource_group_name
+  resource_group_name = local.effective_resource_group_name
   sku                 = "PerGB2018"
   retention_in_days   = 30
 }
@@ -256,7 +349,7 @@ resource "azurerm_application_insights" "shared" {
   for_each                      = var.observability_enabled && !local.use_existing_telemetry ? { shared = true } : {}
   name                          = "${var.apim_name}-insights"
   location                      = var.location
-  resource_group_name           = var.resource_group_name
+  resource_group_name           = local.effective_resource_group_name
   application_type              = "web"
   workspace_id                  = azurerm_log_analytics_workspace.shared[each.key].id
   disable_ip_masking            = false
@@ -284,7 +377,7 @@ resource "azapi_resource" "application_insights_logger" {
 resource "azurerm_api_management_api_diagnostic" "claude" {
   for_each                 = var.observability_enabled ? local.apim_instances : {}
   identifier               = "applicationinsights"
-  resource_group_name      = var.resource_group_name
+  resource_group_name      = local.effective_resource_group_name
   api_management_name      = each.value.name
   api_name                 = azurerm_api_management_api.claude[each.key].name
   api_management_logger_id = azapi_resource.application_insights_logger[each.key].id

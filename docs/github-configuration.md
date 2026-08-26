@@ -2,13 +2,13 @@
 
 Configure this inventory in the GitHub environment selected by the workflow. Create GitHub environments, Azure federated identities, and external Blob state first. The workflow uses OIDC and does not create identities, environments, state storage, or reviewer rules.
 
-`deploy` accepts `environment_profile` (`poc` or `prod`) and `networking_profile` (`public` or `private`). Its `prod` input maps to the `prod-primary` GitHub environment; `poc` maps to `poc`. The networking input must match `APIM_NETWORKING_PROFILE` for `prod`.
+`deploy` accepts `environment_profile` (`poc` or `prod`), `networking_profile` (`public` or `private`), `deployment_mode` (`existing` default or `greenfield`), and Marketplace acceptance. Its `prod` input maps to the `prod-primary` GitHub environment; `poc` maps to `poc`. The networking input must match `APIM_NETWORKING_PROFILE` for `prod`. Do not change mode for an existing state; greenfield needs a new state key.
 
 ## Secrets
 
 | Secret | Required when | Purpose |
 | --- | --- | --- |
-| `AZURE_RESOURCE_GROUP` | Always | Existing gateway resource group. |
+| `AZURE_RESOURCE_GROUP` | Always | Existing gateway resource group in `existing`; new resource group name in `greenfield`. |
 | `AZURE_CLIENT_ID` | Always | OIDC deployment identity client ID. |
 | `AZURE_TENANT_ID` | Always | Tenant for Azure login. |
 | `AZURE_SUBSCRIPTION_ID` | Always | Target subscription for APIM resources. |
@@ -20,11 +20,13 @@ Configure this inventory in the GitHub environment selected by the workflow. Cre
 | --- | --- |
 | `AZURE_LOCATION`, `APIM_NAME`, `APIM_PUBLISHER_EMAIL`, `APIM_PUBLISHER_NAME` | Primary APIM identity and location. |
 | `ENTRA_TENANT_ID`, `APIM_EXPECTED_AUDIENCE`, `APIM_REQUIRED_APP_ROLE` | Caller-token validation. |
-| `FOUNDRY_BASE_URL`, `FOUNDRY_SUBSCRIPTION_ID`, `FOUNDRY_RESOURCE_GROUP`, `FOUNDRY_ACCOUNT_NAME` | Existing Foundry target. The URL is `https://<account>.services.ai.azure.com/anthropic`. |
+| `FOUNDRY_BASE_URL`, `FOUNDRY_SUBSCRIPTION_ID`, `FOUNDRY_RESOURCE_GROUP`, `FOUNDRY_ACCOUNT_NAME` | Existing Foundry target. The URL is `https://<account>.services.ai.azure.com/anthropic`. Greenfield reuses only `FOUNDRY_ACCOUNT_NAME` and derives the rest in the target subscription. |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Three existing, allowlisted deployment names. |
 | `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, `PER_USER_CONCURRENT_STREAM_LIMIT`, `AGGREGATE_CONCURRENT_STREAM_LIMIT` | Measured controls; require `per-user < aggregate < 2048`. RPM/TPM apply to messages; concurrency is gateway-local and approximate. |
 | `APIM_SKU`, `APIM_ZONE_REDUNDANT`, `APIM_DEFAULT_CAPACITY` | `StandardV2`, `false`, and a measured fixed capacity for the public baseline. |
 | `TOFU_STATE_SUBSCRIPTION_ID`, `TOFU_STATE_RG`, `TOFU_STATE_STORAGE_ACCOUNT`, `TOFU_STATE_CONTAINER`, `TOFU_STATE_KEY` | Existing Azure Blob backend coordinates. |
+
+For greenfield also configure `FOUNDRY_PROJECT_NAME`, `FOUNDRY_LOCATION`, `CLAUDE_MODEL_DEPLOYMENT_NAME`, `CLAUDE_MODEL_NAME`, `CLAUDE_MODEL_VERSION`, `CLAUDE_MODEL_SKU`, `CLAUDE_MODEL_CAPACITY`, `CLAUDE_ORGANIZATION_NAME`, `CLAUDE_COUNTRY_CODE`, and `CLAUDE_INDUSTRY`. The Marketplace checkbox authorizes OpenTofu/modelProviderData to accept Anthropic Marketplace terms and incur billing; do not configure secondary Foundry or private networking in greenfield. Greenfield creates the named resource group, so the deployment identity needs subscription-level permission to create that resource group; ongoing resources and role assignments can be scoped appropriately.
 
 ## Optional and conditional variables
 
@@ -42,7 +44,7 @@ Configure this inventory in the GitHub environment selected by the workflow. Cre
 
 Use immutable GitHub-environment/repository/branch subject claims for deployment and smoke federated credentials. Grant the deployment identity AzureRM and Blob access required for the target and state container; use Azure AD/OIDC backend authentication, not storage keys. Create a private Blob container with versioning and soft delete, and control state access.
 
-Protect `prod-primary` with required reviewers. The plan job creates Foundry preflight, run context, and a sanitized plan summary; the deploy job checks commit, generated inputs, provider lock, target subscription, state coordinates, and summary equivalence before apply. It rejects delete/replacement changes. The summary proves equivalent planned changes, **not** human-readable semantic intent; reviewers must still inspect source, inputs, and summary. Raw plans and state are not retained.
+Protect `prod-primary` with required reviewers. The plan job initializes the backend before preflight, then creates Foundry preflight, run context, and a sanitized plan summary. The deploy job checks commit, generated inputs, provider lock, target subscription, state coordinates, and summary equivalence, reruns the applicable read-only preflight immediately before replan/apply, and rejects delete/replacement changes. Greenfield preflight permits an existing named resource group only for a partial-apply retry when the resource-group address already exists in the current state. The summary proves equivalent planned changes, **not** human-readable semantic intent; reviewers must still inspect source, inputs, and summary. Raw plans, state, and raw attestation fields are not retained; the generated tfvars are represented only by their hash.
 
 ## HA smoke environment values
 

@@ -39,7 +39,7 @@ class ImportManifestTests(unittest.TestCase):
 
     def test_single_region_minimal(self):
         manifest, shell = self.generate([])
-        self.assertEqual(len(manifest["imports"]), 21)
+        self.assertEqual(len(manifest["imports"]), 24)
         self.assertEqual(len(manifest["excluded"]), 1)
         self.assertIn('azapi_resource.apim["primary"]', {item["address"] for item in manifest["imports"]})
         ids = {item["address"]: item["id"] for item in manifest["imports"]}
@@ -58,7 +58,7 @@ class ImportManifestTests(unittest.TestCase):
             "--secondary-monitoring-role-assignment", GUIDS["secondary-monitoring"],
             "--traffic-manager-name", "gateway-failover",
         ])
-        self.assertEqual(len(manifest["imports"]), 65)
+        self.assertEqual(len(manifest["imports"]), 71)
         self.assertEqual(sum("metric_alert" in item["address"] for item in manifest["imports"]), 10)
         addresses = {item["address"] for item in manifest["imports"]}
         self.assertIn('azurerm_monitor_metric_alert.cpu["primary"]', addresses)

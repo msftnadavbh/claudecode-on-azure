@@ -1,6 +1,6 @@
 # Architecture
 
-Use this page to understand the request path and topology choices. You provide Foundry deployments, an Entra application, a resource group, and any selected network resources. This repository manages APIM and its integration resources; it does not create Foundry, Entra, DNS, certificates, private endpoints, or a custom hostname.
+Use this page to understand the request path and topology choices. Existing mode uses your Foundry deployments and resource group; greenfield creates a new resource group, Foundry account/project, and one Claude deployment. You provide the Entra application and selected network resources. This repository does not create Entra, DNS, certificates, private endpoints, or a custom hostname.
 
 ## Baseline and options
 
@@ -16,7 +16,7 @@ Managed Claude Code -> Entra user token -> APIM /claude -> your Foundry /anthrop
 2. APIM validates tenant, audience, `oid`, `tid`, and the app-role authorization (or the optional Desktop preview's exact delegated scope).
 3. APIM applies per-user RPM, messages-only TPM, per-user concurrency, and aggregate concurrency. Concurrency counters are gateway-local and approximate; configured aggregate admission must remain below 2,048.
 4. APIM strips caller credentials, obtains a managed-identity token, and calls Foundry under `Foundry User`.
-5. APIM allows only the three configured deployment names and forwards native Messages/count-token routes. SSE responses are unbuffered; inference POSTs are never replayed.
+5. APIM allows only the three configured deployment names in existing mode, or one deployment mapped to all three roles in greenfield mode, and forwards native Messages/count-token routes. SSE responses are unbuffered; inference POSTs are never replayed.
 
 The backend breaker opens after 50 backend 5xx responses in one minute. It does not trip on 429 and does not retry requests. A secondary Foundry target is optional but must expose the same three deployment names.
 

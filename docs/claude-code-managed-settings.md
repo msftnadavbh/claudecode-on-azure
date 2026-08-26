@@ -1,6 +1,6 @@
 # Managed Claude Code settings
 
-Generate non-secret, platform-specific Claude Code configuration for device management. You need the gateway URL, Entra audience, three Foundry deployment names, and managed helper paths. Generation writes files only; device management installs them, sets permissions, pins versions, updates, and rolls back. You provide a native Windows helper.
+Generate non-secret, platform-specific Claude Code configuration for device management. You need the gateway URL, Entra audience, three role model names (one deployment mapped to all roles in greenfield), and managed helper paths. Generation writes files only; device management installs them, sets permissions, pins versions, updates, and rolls back. You provide a native Windows helper.
 
 ```bash
 python3 scripts/claude_code/generate_managed_settings.py \

@@ -11,13 +11,33 @@ output "gatewayFailoverFqdn" {
 }
 
 output "opusModel" {
-  value = var.opus_deployment_name
+  value = var.deployment_mode == "greenfield" ? var.claude_model_deployment_name : var.opus_deployment_name
 }
 
 output "sonnetModel" {
-  value = var.sonnet_deployment_name
+  value = var.deployment_mode == "greenfield" ? var.claude_model_deployment_name : var.sonnet_deployment_name
 }
 
 output "haikuModel" {
-  value = var.haiku_deployment_name
+  value = var.deployment_mode == "greenfield" ? var.claude_model_deployment_name : var.haiku_deployment_name
+}
+
+output "deploymentMode" {
+  value = var.deployment_mode
+}
+
+output "foundryResourceId" {
+  value = local.effective_foundry_resource_id
+}
+
+output "foundryBaseUrl" {
+  value = local.effective_foundry_base_url
+}
+
+output "foundryProjectName" {
+  value = var.deployment_mode == "greenfield" ? var.foundry_project_name : ""
+}
+
+output "managedFoundryDeploymentName" {
+  value = var.deployment_mode == "greenfield" ? var.claude_model_deployment_name : ""
 }

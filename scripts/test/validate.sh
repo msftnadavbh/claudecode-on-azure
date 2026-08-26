@@ -18,6 +18,18 @@ python3 migration/tofu/test_generate_import_manifest.py
 python3 - <<'PY'
 from pathlib import Path
 import re
+
+for page in Path(".").glob("**/*.md"):
+    if ".terraform" in page.parts:
+        continue
+    for target in re.findall(r"\[[^]]*\]\(([^ )#]+)", page.read_text()):
+        if "://" not in target and not target.startswith("mailto:"):
+            assert (page.parent / target).exists(), f"broken Markdown link: {page} -> {target}"
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 policies = {
@@ -130,6 +142,31 @@ assert "secondary-foundry-preflight.json" in workflow
 assert workflow.count("allow-no-subscriptions: true") == 1
 assert "allow-no-subscriptions: true" in ha_workflow
 assert 'azurerm_api_management_backend.foundry' in tofu.split('resource "azurerm_api_management_api_policy" "claude"', 1)[1].split('resource ', 1)[0]
+assert 'variable "deployment_mode"' in tofu
+assert 'resource "azurerm_resource_group" "greenfield"' in tofu
+assert 'resource "azapi_resource" "greenfield_foundry"' in tofu
+assert 'resource "azapi_resource" "greenfield_project"' in tofu
+assert 'resource "azapi_resource" "greenfield_claude"' in tofu
+assert 'resource "terraform_data" "deployment_mode"' in tofu
+assert 'triggers_replace = [var.deployment_mode]' in tofu
+assert 'depends_on = [azapi_resource.greenfield_project, azurerm_role_assignment.foundry_user["primary"]]' in tofu
+assert 'Microsoft.CognitiveServices/accounts@2026-05-01' in tofu
+assert 'Microsoft.CognitiveServices/accounts/projects@2026-05-01' in tofu
+assert 'Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview' in tofu
+assert 'disableLocalAuth          = true' in tofu
+assert 'storedCompletionsDisabled = true' in tofu
+assert 'publicNetworkAccess       = "Enabled"' in tofu
+assert 'versionUpgradeOption = "NoAutoUpgrade"' in tofu
+assert 'provider "azuread"' not in tofu and 'provider "msgraph"' not in tofu
+assert 'deployment_mode:' in workflow
+assert 'accept_anthropic_marketplace_terms:' in workflow
+assert 'scripts/greenfield_foundry_preflight.py' in workflow
+assert "tofu -chdir=infra/tofu state show 'azurerm_resource_group.greenfield[0]'" in workflow
+assert '--allow-existing-resource-group' in workflow
+assert "jq '{primaryGatewayUrl:" in workflow
+assert 'for attempt in {1..6}; do' in workflow and 'sleep 30' in workflow
+assert workflow.count('scripts/foundry_preflight.py') >= 3
+assert 'from pathlib import Path\nimport re\n\nfor page in Path(".").glob("**/*.md")' in Path("scripts/test/validate.sh").read_text()
 PY
 
 tofu -chdir=infra/tofu fmt -check

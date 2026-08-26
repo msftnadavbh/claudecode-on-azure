@@ -24,6 +24,7 @@ NAMED_VALUES = (
     "claude-desktop-delegated-auth-enabled", "claude-desktop-client-id",
     "claude-desktop-delegated-scope", "per-user-rate-limit", "per-user-token-limit",
     "per-user-concurrent-stream-limit", "aggregate-concurrent-stream-limit",
+    "opus-model", "sonnet-model", "haiku-model",
 )
 ALERTS = {
     "high-capacity": "cpu",
