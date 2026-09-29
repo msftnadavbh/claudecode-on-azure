@@ -45,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install OpenTofu
+        run: bash scripts/tofu/install.sh
       - name: Validate repository
         run: scripts/test/validate.sh
 
@@ -96,6 +98,7 @@ jobs:
       ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
       PER_USER_RATE_LIMIT: ${{ vars.PER_USER_RATE_LIMIT }}
       PER_USER_TOKEN_LIMIT: ${{ vars.PER_USER_TOKEN_LIMIT }}
+      PER_USER_MONTHLY_TOKEN_QUOTA: ${{ vars.PER_USER_MONTHLY_TOKEN_QUOTA }}
       PER_USER_CONCURRENT_STREAM_LIMIT: ${{ vars.PER_USER_CONCURRENT_STREAM_LIMIT }}
       AGGREGATE_CONCURRENT_STREAM_LIMIT: ${{ vars.AGGREGATE_CONCURRENT_STREAM_LIMIT }}
       APIM_SKU: ${{ vars.APIM_SKU }}
@@ -140,6 +143,8 @@ jobs:
           [[ "${DEPLOY_SECONDARY}" == false || ( -n "${AZURE_SECONDARY_LOCATION}" && -n "${APIM_SECONDARY_NAME}" ) ]]
           [[ -z "${LOG_ANALYTICS_WORKSPACE_RESOURCE_ID}" && -z "${APPLICATION_INSIGHTS_RESOURCE_ID}" || -n "${LOG_ANALYTICS_WORKSPACE_RESOURCE_ID}" && -n "${APPLICATION_INSIGHTS_RESOURCE_ID}" ]]
           case "${APIM_NETWORKING_PROFILE}" in public) ;; private) [[ -n "${APIM_SUBNET_RESOURCE_ID}" && ( "${DEPLOY_SECONDARY}" == false || -n "${APIM_SECONDARY_SUBNET_RESOURCE_ID}" ) ]] ;; *) exit 1 ;; esac
+      - name: Validate networking profile for every environment
+        run: |
           [[ "${APIM_NETWORKING_PROFILE}" == "${{ inputs.networking_profile }}" ]]
       - name: Validate greenfield workflow inputs
         if: inputs.deployment_mode == 'greenfield'
@@ -271,21 +276,26 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
       - name: Post-deployment smoke test
+        shell: bash
         env:
           APIM_BASE_URL: https://${{ vars.APIM_NAME }}.azure-api.net/claude
           APIM_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
+          APIM_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
           APIM_TOKEN_HELPER: ${{ github.workspace }}/scripts/auth/apim-user-token-helper.sh
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.deployment_mode == 'greenfield' && vars.CLAUDE_MODEL_DEPLOYMENT_NAME || vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}
           ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.deployment_mode == 'greenfield' && vars.CLAUDE_MODEL_DEPLOYMENT_NAME || vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.deployment_mode == 'greenfield' && vars.CLAUDE_MODEL_DEPLOYMENT_NAME || vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
         run: |
+          umask 077
           for attempt in {1..6}; do
-            if scripts/test/smoke.sh; then
+            if scripts/test/smoke.sh > "${RUNNER_TEMP}/smoke-evidence.json"; then
               break
             fi
             [[ "${attempt}" == 6 ]] && exit 1
             sleep 30
           done
-          printf '{"check":"scripts/test/smoke.sh","networking_profile":"public","status":"passed"}\n' > "${RUNNER_TEMP}/smoke-evidence.json"
       - name: Upload smoke evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tofu-deploy-smoke-${{ github.sha }}-${{ github.run_id }}

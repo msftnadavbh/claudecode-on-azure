@@ -3,28 +3,14 @@ set -euo pipefail
 
 : "${APIM_BASE_URL:?Set APIM_BASE_URL, for example https://gateway.example/claude}"
 : "${APIM_TOKEN_HELPER:?Set APIM_TOKEN_HELPER to the approved user token helper}"
+: "${ANTHROPIC_DEFAULT_OPUS_MODEL:?Set the pinned Opus deployment name}"
 : "${ANTHROPIC_DEFAULT_SONNET_MODEL:?Set the pinned Sonnet deployment name}"
+: "${ANTHROPIC_DEFAULT_HAIKU_MODEL:?Set the pinned Haiku deployment name}"
 
-credential="$("${APIM_TOKEN_HELPER}")"
-common_headers=(-H "Authorization: Bear""er ${credential}" -H 'content-type: application/json' -H 'anthropic-version: 2023-06-01')
-count_body="$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply only OK"}]}' "${ANTHROPIC_DEFAULT_SONNET_MODEL}")"
-stream_body="$(printf '{"model":"%s","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"Reply only OK"}]}' "${ANTHROPIC_DEFAULT_SONNET_MODEL}")"
-
-unauthenticated_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  --connect-timeout 10 --max-time 30 \
-  -H 'content-type: application/json' --data "${stream_body}" "${APIM_BASE_URL}/v1/messages")"
-[[ "${unauthenticated_status}" == 401 ]] || {
-  echo "Expected unauthenticated request to return 401; got ${unauthenticated_status}" >&2
-  exit 1
-}
-
-count_response="$(curl --fail-with-body --silent --connect-timeout 10 --max-time 30 "${common_headers[@]}" \
-  --data "${count_body}" "${APIM_BASE_URL}/v1/messages/count_tokens")"
-python3 -c 'import json,sys; assert json.load(sys.stdin)["input_tokens"] >= 0' <<<"${count_response}"
-
-stream_response="$(curl --fail-with-body --no-buffer --silent --connect-timeout 10 --max-time 60 "${common_headers[@]}" \
-  --data "${stream_body}" "${APIM_BASE_URL}/v1/messages")"
-grep -q 'message_start' <<<"${stream_response}"
-grep -q 'message_stop' <<<"${stream_response}"
-
-echo "Post-deployment authentication, count_tokens, and SSE smoke checks passed."
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+exec python3 "${script_dir}/endpoint_smoke_matrix.py" \
+  --endpoint "primary=${APIM_BASE_URL}" \
+  --token-helper "${APIM_TOKEN_HELPER}" \
+  --model "opus=${ANTHROPIC_DEFAULT_OPUS_MODEL}" \
+  --model "sonnet=${ANTHROPIC_DEFAULT_SONNET_MODEL}" \
+  --model "haiku=${ANTHROPIC_DEFAULT_HAIKU_MODEL}"

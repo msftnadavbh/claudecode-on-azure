@@ -2,6 +2,8 @@
 
 Use this page to understand the request path and topology choices. Existing mode uses your Foundry deployments and resource group; greenfield creates a new resource group, Foundry account/project, and one Claude deployment. You provide the Entra application and selected network resources. This repository does not create Entra, DNS, certificates, private endpoints, or a custom hostname.
 
+This describes the **repository's proposed IaC**, not the [focused live pilot](opus-5-5-pilot.md): its existing `claude-api` and backend names differ from IaC, and its CLI/user/role/scope authorization is stricter than the optional role-OR-Desktop branch below. Do not apply IaC blindly over it.
+
 ## Baseline and options
 
 The baseline is fixed-capacity, public, single-region `StandardV2` APIM. `PremiumV2` is required for either zone redundancy or private VNet injection. An optional second APIM provides a separate regional gateway. Public HA may use optional Traffic Manager; you operate private failover DNS and all traffic changes.

@@ -25,6 +25,16 @@ ENV = {
 
 
 class GenerateTfvarsTests(unittest.TestCase):
+    def test_monthly_quota(self):
+        for raw, expected in [(None, 0), ("", 0), ("  ", 0), ("0", 0), ("123", 123), ("9223372036854775807", 9223372036854775807)]:
+            inputs = ENV if raw is None else dict(ENV, PER_USER_MONTHLY_TOKEN_QUOTA=raw)
+            with self.subTest(raw=raw), patch.dict(os.environ, inputs, clear=True):
+                self.assertEqual(generate_tfvars.values()["per_user_monthly_token_quota"], expected)
+        for raw in ("-1", "1.5", "1e3", "null", "9223372036854775808", "+1", "١"):
+            with self.subTest(raw=raw), patch.dict(os.environ, dict(ENV, PER_USER_MONTHLY_TOKEN_QUOTA=raw), clear=True):
+                with self.assertRaisesRegex(ValueError, "PER_USER_MONTHLY_TOKEN_QUOTA"):
+                    generate_tfvars.values()
+
     def test_writes_typed_prod_values(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ENV, clear=True):
             path = Path(directory) / "inputs.tfvars.json"

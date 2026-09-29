@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import ipaddress
 import json
 import math
 import os
 import ssl
-import subprocess
 import time
 from collections import Counter
 from collections.abc import AsyncIterator
 from urllib.parse import urlsplit
+from endpoint_smoke_matrix import token_from_helper
+from sse_records import SSERecords, is_event_stream
 
 
 def percentile(values: list[float], quantile: float) -> float | None:
@@ -90,32 +92,67 @@ async def _iter_response_body_lines(
         yield bytes(buffered)
 
 
-async def run_probe(args: argparse.Namespace) -> dict:
-    target = urlsplit(args.url)
-    if target.scheme not in {"http", "https"} or not target.hostname:
-        raise ValueError("--url must be an HTTP or HTTPS URL")
-    if target.hostname.endswith(".services.ai.azure.com") and not args.allow_live_model:
-        raise ValueError("direct Foundry targets require --allow-live-model")
+def validate_target(args):
+    if any(ord(char) <= 32 or ord(char) == 127 for char in args.url):
+        raise ValueError("invalid target URL")
+    try:
+        target = urlsplit(args.url)
+        if (target.scheme not in {"http", "https"} or not target.hostname
+                or "@" in target.netloc or "?" in args.url or "#" in args.url
+                or target.port == 0 or target.netloc.endswith(":")):
+            raise ValueError
+    except ValueError:
+        raise ValueError("invalid target URL") from None
+    try:
+        loopback = ipaddress.ip_address(target.hostname).is_loopback
+    except ValueError:
+        loopback = False
+    if args.token_helper and target.scheme != "https":
+        raise ValueError("credential helpers require HTTPS")
+    if not (target.scheme == "http" and loopback and not args.token_helper):
+        if target.scheme != "https" or not args.allow_live_model:
+            raise ValueError("non-local targets require HTTPS and --allow-live-model")
+    for name in ("concurrency", "connect_parallelism", "timeout", "stream_duration", "event_interval_ms"):
+        value = getattr(args, name)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("invalid probe limits")
+    for name in ("ramp_seconds", "initial_delay_ms"):
+        value = getattr(args, name)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("invalid probe limits")
+    for name in ("concurrency", "connect_parallelism", "event_interval_ms", "initial_delay_ms", "disconnect_after_events"):
+        value = getattr(args, name)
+        if not isinstance(value, int) or (name == "disconnect_after_events" and value < -1):
+            raise ValueError("invalid probe counts")
+    for name in ("min_ok", "max_ok"):
+        value = getattr(args, name, None)
+        if value is not None and (not isinstance(value, int) or not 0 <= value <= args.concurrency):
+            raise ValueError("invalid outcome count")
+    if (getattr(args, "min_ok", None) is not None and getattr(args, "max_ok", None) is not None
+            and args.min_ok > args.max_ok):
+        raise ValueError("invalid outcome count")
+    return target
 
+
+async def run_probe(args: argparse.Namespace) -> dict:
+    target = validate_target(args)  # Must precede any helper execution or connection.
     token_helpers = args.token_helper or []
     if isinstance(token_helpers, str):
         token_helpers = [token_helpers]
     authorizations = []
     for helper in token_helpers:
-        completed = subprocess.run([helper], check=True, capture_output=True, text=True)
-        authorization = completed.stdout.strip()
-        if not authorization:
-            raise ValueError("token helper returned an empty credential")
+        authorization = token_from_helper(helper, args.timeout)
+        if authorization is None:
+            raise ValueError("credential_helper_failed")
         authorizations.append(authorization)
 
     ssl_context = ssl.create_default_context() if target.scheme == "https" else None
     port = target.port or (443 if target.scheme == "https" else 80)
     path = target.path or "/"
-    if target.query:
-        path = f"{path}?{target.query}"
 
     outcomes: Counter[str] = Counter()
     ttfb_seconds: list[float] = []
+    header_seconds: list[float] = []
     stream_seconds: list[float] = []
     start_gate = asyncio.Event()
     semaphore = asyncio.Semaphore(args.connect_parallelism)
@@ -149,6 +186,7 @@ async def run_probe(args: argparse.Namespace) -> dict:
                 f"Host: {target.netloc}",
                 "Content-Type: application/json",
                 "Accept: text/event-stream",
+                "anthropic-version: 2023-06-01",
                 f"Content-Length: {len(body)}",
                 "Connection: close",
                 f"X-Synthetic-Duration-Seconds: {args.stream_duration}",
@@ -169,7 +207,9 @@ async def run_probe(args: argparse.Namespace) -> dict:
                 header_line = await asyncio.wait_for(
                     reader.readline(), timeout=args.timeout
                 )
-                if header_line in {b"\r\n", b"\n", b""}:
+                if not header_line:
+                    raise ConnectionError("incomplete headers")
+                if header_line in {b"\r\n", b"\n"}:
                     break
                 name, separator, value = header_line.partition(b":")
                 if separator:
@@ -181,14 +221,7 @@ async def run_probe(args: argparse.Namespace) -> dict:
                         else decoded_value
                     )
 
-            body_lines = _iter_response_body_lines(reader, response_headers)
-            try:
-                first_body_line = await asyncio.wait_for(
-                    anext(body_lines), timeout=args.timeout
-                )
-            except StopAsyncIteration:
-                first_body_line = b""
-            ttfb_seconds.append(time.perf_counter() - request_start)
+            header_seconds.append(time.perf_counter() - request_start)
 
             if status == 429:
                 outcomes["http_429"] += 1
@@ -199,37 +232,31 @@ async def run_probe(args: argparse.Namespace) -> dict:
             if status != 200:
                 outcomes["http_failure"] += 1
                 return
+            if not is_event_stream(response_headers.get("content-type", "")):
+                outcomes["stream_failure"] += 1
+                return
             if args.disconnect_after_events == 0:
                 writer.close()
                 await writer.wait_closed()
                 outcomes["client_disconnect"] += 1
                 return
 
-            saw_stop = False
+            records = SSERecords()
             event_count = 0
-
-            def record_line(line: bytes) -> bool:
-                nonlocal event_count, saw_stop
-                if b"message_stop" in line:
-                    saw_stop = True
-                if line.startswith(b"event:"):
-                    event_count += 1
-                    return (
-                        args.disconnect_after_events > 0
-                        and event_count >= args.disconnect_after_events
-                    )
-                return False
-
-            if first_body_line and record_line(first_body_line):
-                outcomes["client_disconnect"] += 1
-                return
             async with asyncio.timeout(args.timeout):
-                async for line in body_lines:
-                    if record_line(line):
-                        outcomes["client_disconnect"] += 1
-                        return
+                async for line in _iter_response_body_lines(reader, response_headers):
+                    if records.feed(line):
+                        if not event_count:
+                            ttfb_seconds.append(time.perf_counter() - request_start)
+                        event_count += 1
+                        if 0 < args.disconnect_after_events <= event_count:
+                            outcomes["client_disconnect"] += 1
+                            return
+            records.finish()
             stream_seconds.append(time.perf_counter() - request_start)
-            outcomes["ok" if saw_stop else "stream_failure"] += 1
+            outcomes["ok"] += 1
+        except (ValueError, UnicodeError):
+            outcomes["stream_failure"] += 1
         except (TimeoutError, asyncio.TimeoutError):
             outcomes["timeout"] += 1
         except (ConnectionError, OSError, ssl.SSLError):
@@ -250,6 +277,10 @@ async def run_probe(args: argparse.Namespace) -> dict:
     return {
         "concurrency": args.concurrency,
         "duration_seconds": round(elapsed, 3),
+        "header_p50_seconds": percentile(header_seconds, 0.50),
+        "header_p95_seconds": percentile(header_seconds, 0.95),
+        "first_event_p50_seconds": percentile(ttfb_seconds, 0.50),
+        "first_event_p95_seconds": percentile(ttfb_seconds, 0.95),
         "ttfb_p50_seconds": percentile(ttfb_seconds, 0.50),
         "ttfb_p95_seconds": percentile(ttfb_seconds, 0.95),
         "ttfb_p99_seconds": percentile(ttfb_seconds, 0.99),
@@ -280,7 +311,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Async SSE probe for APIM or synthetic backend")
     parser.add_argument("--url", required=True)
     parser.add_argument("--concurrency", type=int, choices=[500, 1000, 1500, 2000, 2500])
-    parser.add_argument("--smoke-concurrency", type=int, help="Small local-only target")
+    parser.add_argument("--smoke-concurrency", type=int, help="Small request count, not a local-target guarantee")
     parser.add_argument("--connect-parallelism", type=int, default=500)
     parser.add_argument("--ramp-seconds", type=float, default=5)
     parser.add_argument("--timeout", type=float, default=300)
@@ -306,8 +337,10 @@ def parse_args() -> argparse.Namespace:
         if not 1 <= args.smoke_concurrency <= 100:
             parser.error("--smoke-concurrency must be between 1 and 100")
         args.concurrency = args.smoke_concurrency
-    if min(args.connect_parallelism, args.timeout, args.stream_duration) <= 0:
-        parser.error("parallelism, timeout, and stream duration must be positive")
+    try:
+        validate_target(args)
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 
@@ -318,5 +351,5 @@ if __name__ == "__main__":
         print(json.dumps(result, sort_keys=True))
         if not accepted(result, args):
             raise SystemExit(1)
-    except (ValueError, subprocess.CalledProcessError) as exc:
+    except ValueError as exc:
         raise SystemExit(str(exc)) from exc

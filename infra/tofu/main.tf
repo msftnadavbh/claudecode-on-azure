@@ -52,6 +52,7 @@ locals {
     "claude-desktop-delegated-scope"        = var.claude_desktop_delegated_scope
     "per-user-rate-limit"                   = tostring(var.per_user_rate_limit)
     "per-user-token-limit"                  = tostring(var.per_user_token_limit)
+    "per-user-monthly-token-quota"          = tostring(var.per_user_monthly_token_quota)
     "per-user-concurrent-stream-limit"      = tostring(var.per_user_concurrent_stream_limit)
     "aggregate-concurrent-stream-limit"     = tostring(var.aggregate_concurrent_stream_limit)
     "opus-model"                            = local.greenfield ? var.claude_model_deployment_name : var.opus_deployment_name
@@ -334,6 +335,7 @@ resource "azurerm_api_management_api_operation_policy" "claude" {
   resource_group_name = local.effective_resource_group_name
   operation_id        = azurerm_api_management_api_operation.claude[each.key].operation_id
   xml_content         = file(each.value.policy_path)
+  depends_on          = [azurerm_api_management_api_policy.claude]
 }
 
 resource "azurerm_log_analytics_workspace" "shared" {

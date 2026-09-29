@@ -34,9 +34,32 @@ class FoundryPreflightTests(unittest.TestCase):
             self.assertEqual(foundry_preflight.main(ARGS), 0)
         report = json.loads(output.getvalue())
         self.assertTrue(report["ok"])
-        self.assertEqual(report["deployments"]["opus"], {"capacity": 10, "deployment": "opus-deployment", "model": "claude-opus", "sku": "GlobalStandard", "version": "2026-01-01"})
+        self.assertEqual(report["deployments"]["opus"], {"capacity": 10, "deployment": "opus-deployment", "model": "claude-opus", "sku": "GlobalStandard", "version": "2026-01-01", "version_upgrade_option": None})
         self.assertEqual(report["quota"]["claude_rows"][0]["limit"], 20)
         self.assertEqual(command.call_count, 4)
+
+    def test_version_stability_and_shared_mapping(self):
+        for upgrade, version, warning in [("NoAutoUpgrade", "1", None),
+                                           ("OnceNewDefaultVersionAvailable", "1", "not NoAutoUpgrade"),
+                                           (None, "1", "policy unknown"),
+                                           ("NoAutoUpgrade", None, "version missing or blank"),
+                                           ("NoAutoUpgrade", "  ", "version missing or blank")]:
+            properties = {"provisioningState": "Succeeded", "model": {"format": "Anthropic", "name": "claude", "version": version}}
+            if upgrade is not None:
+                properties["versionUpgradeOption"] = upgrade
+            replies = [{"id": "sub-id"}, {"kind": "AIServices", "provisioningState": "Succeeded", "properties": {"customSubDomainName": "foundry-custom"}},
+                       [{"name": "shared", "properties": properties}], []]
+            args = SimpleNamespace(subscription="sub-id", resource_group="rg", account="account", expected_base_url=ARGS[7],
+                                   deployment=[f"{role}=shared" for role in ("opus", "sonnet", "haiku")])
+            with self.subTest(upgrade=upgrade, version=version), patch.object(foundry_preflight, "az", side_effect=replies):
+                report = foundry_preflight.run(args)
+            self.assertTrue(report["ok"])
+            self.assertEqual({item["model"] for item in report["deployments"].values()}, {"claude"})
+            self.assertEqual(report["deployments"]["sonnet"]["version_upgrade_option"], upgrade)
+            stability = [item for item in report["warnings"] if "stability" in item]
+            self.assertEqual(len(stability), 3 if warning else 0)
+            if warning:
+                self.assertTrue(all(warning in item for item in stability))
 
     def test_rejects_mismatched_expected_host(self):
         responses = iter([

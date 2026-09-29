@@ -1,7 +1,7 @@
 <policies>
   <inbound>
     <base />
-    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
+    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@(&quot;claude-foundry:rpm:&quot; + (string)context.Variables[&quot;callerKey&quot;])" />
   </inbound>
   <backend>
     <base />

@@ -26,7 +26,7 @@ Follow the exact [GitHub configuration inventory](github-configuration.md). Run 
 
 ## 4. Deploy and smoke
 
-Dispatch `deploy` with a matching `environment_profile` and `networking_profile`. Review the sanitized plan summary; deployment regenerates inputs and plan, compares their summaries, and rejects non-equivalent results. Public deployments run the existing smoke command with up to six attempts, 30 seconds apart. Private deployments require protected in-network `ha-smoke` evidence before release; operators own traffic changes.
+Dispatch `deploy` with a matching `environment_profile` and `networking_profile`. Review the sanitized plan summary; deployment regenerates inputs and plan, compares their summaries, and rejects non-equivalent results. Public deployments run the existing smoke command with up to six attempts, 30 seconds apart. The retained artifact is the final attempt's safe matrix evidence, including infrastructure metadata; failures are retained when the process generates JSON. An empty evidence file means the final attempt produced no stdout; never reuse evidence from a prior attempt. Cancellation does not guarantee evidence. Private deployments require protected in-network `ha-smoke` evidence before release; operators own traffic changes.
 
 Outputs include gateway URLs and role models in both modes. Greenfield additionally reports `deploymentMode`, `foundryResourceId`, `foundryBaseUrl`, `foundryProjectName`, and `managedFoundryDeploymentName`.
 
