@@ -316,6 +316,17 @@ variable "per_user_token_limit" {
   }
 }
 
+variable "per_user_monthly_token_quota" {
+  type        = number
+  description = "Optional gateway-local monthly token quota per principal, including CI. Zero disables it."
+  default     = 0
+
+  validation {
+    condition     = var.per_user_monthly_token_quota >= 0 && var.per_user_monthly_token_quota <= 9223372036854775807 && floor(var.per_user_monthly_token_quota) == var.per_user_monthly_token_quota
+    error_message = "per_user_monthly_token_quota must be an integer between 0 and 9223372036854775807."
+  }
+}
+
 variable "per_user_concurrent_stream_limit" {
   type        = number
   description = "Approximate maximum concurrent forwarded requests per user identity admitted by each APIM gateway."

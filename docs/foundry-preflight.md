@@ -15,4 +15,6 @@ python3 scripts/foundry_preflight.py \
   --deployment "haiku=$ANTHROPIC_DEFAULT_HAIKU_MODEL"
 ```
 
-It fails on mismatched active subscription, account, endpoint, deployment state, or model publisher and emits deterministic JSON describing deployment version, SKU, and capacity. Use the same deployment names in a secondary Foundry target. Treat quota rows as advisory; confirm actual quota scope and operational headroom in Foundry before release.
+It fails on mismatched active subscription, account, endpoint, deployment state, or model publisher and emits deterministic JSON describing model, version, `version_upgrade_option`, SKU, and capacity from existing deployment data. Missing/blank versions and absent upgrade policies produce stable nonfatal warnings (absent policy is unknown); any policy other than `NoAutoUpgrade` leaves version stability unestablished. A deployment name alone is not a version pin. This check does not mutate deployments.
+
+Use the same deployment names in a secondary Foundry target, but manually compare the actual primary/secondary **model, version, and upgrade policy** in both reports before failover approval, including a shared deployment mapped to multiple roles. Treat quota rows as advisory; confirm actual quota scope and operational headroom in Foundry before release.

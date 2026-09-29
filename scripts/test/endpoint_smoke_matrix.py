@@ -6,12 +6,16 @@ from collections import OrderedDict
 import http.client
 import json
 import math
+from pathlib import Path
+import re
 import socket
 import ssl
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
+from sse_records import SSERecords, is_event_stream
 
 
 def check(status=None, connect=None, ttfb=None, duration=None, error=None, **extra):
@@ -40,12 +44,16 @@ def error_category(error):
 
 
 def endpoint(value):
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("endpoint must contain no control characters")
     name, separator, base_url = value.partition("=")
     parsed = urlsplit(base_url)
     if (not separator or not name or parsed.scheme != "https" or not parsed.hostname
-            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or "@" in parsed.netloc or "?" in base_url or "#" in base_url
             or parsed.path.rstrip("/") != "/claude"):
         raise ValueError("endpoint must be name=https://host/claude")
+    if parsed.port == 0 or parsed.netloc.endswith(":"):
+        raise ValueError("endpoint port must be valid")
     return name, urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
@@ -65,7 +73,7 @@ def duration(start):
     return round(time.monotonic() - start, 6)
 
 
-def request(url, method, body, headers, timeout):
+def request(url, method, body, headers, timeout, on_connect=None):
     parsed = urlsplit(url)
     connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=timeout)
     started = time.monotonic()
@@ -74,6 +82,8 @@ def request(url, method, body, headers, timeout):
         connection.connect()
         connect_seconds = duration(connected)
         peer_address = connection.sock.getpeername()[0] if connection.sock else None
+        if on_connect:
+            on_connect(connection.sock)
         connection.request(method, parsed.path or "/", body=body, headers=headers)
         response = connection.getresponse()
         return connection, response, check(
@@ -112,14 +122,17 @@ def health_check(base_url, timeout):
     return result
 
 
-def unauthenticated_check(base_url, body, timeout):
+def authorization_check(base_url, operation, body, timeout, expected=401, token=None):
+    headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     connection, response, result = request(
-        route(base_url, "v1/messages"), "POST", body,
-        {"content-type": "application/json", "anthropic-version": "2023-06-01"}, timeout,
+        route(base_url, operation), "POST", body, headers, timeout,
     )
+    result["expected_status"] = expected
     if response:
         try:
-            if result["status"] != 401:
+            if result["status"] != expected:
                 result["error"] = "unexpected_status"
         finally:
             response.close()
@@ -138,29 +151,59 @@ def count_tokens_check(base_url, body, headers, timeout):
 
 
 def stream_check(base_url, body, headers, timeout):
-    connection, response, result = request(route(base_url, "v1/messages"), "POST", body, headers, timeout)
-    if response:
-        def valid(item):
-            if not (item.getheader("Content-Type") or "").lower().startswith("text/event-stream"):
-                return False
-            events = set()
-            while line := item.readline():
-                if line.startswith(b"event:"):
-                    events.add(line[6:].strip().decode())
-                    if {"message_start", "message_stop"} <= events:
-                        return True
-            return False
-        finish(connection, response, result, valid)
+    started = time.monotonic()
+    deadline = started + timeout
+    expired = threading.Event()
+    timer = None
+
+    def on_connect(sock):
+        nonlocal timer
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        if sock is not None:
+            def interrupt():
+                expired.set()
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            timer = threading.Timer(remaining, interrupt)
+            timer.start()
+
+    try:
+        connection, response, result = request(route(base_url, "v1/messages"), "POST", body, headers, timeout, on_connect)
+        if response:
+            def valid(item):
+                if not is_event_stream(item.getheader("Content-Type") or ""):
+                    return False
+                records = SSERecords()
+                while line := item.readline():
+                    if records.feed(line) and "first_event_seconds" not in result:
+                        result["first_event_seconds"] = duration(started)
+                if getattr(item, "length", None) not in (None, 0):
+                    return False
+                records.finish()
+                return True
+            finish(connection, response, result, valid)
+        if expired.is_set() or time.monotonic() >= deadline:
+            result["error"] = "timeout"
+    finally:
+        if timer:
+            timer.cancel()
+            timer.join()
     return result
 
 
 def token_from_helper(helper, timeout):
     try:
         completed = subprocess.run(
-            [helper], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout, check=False,
+            [helper], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, timeout=min(timeout, 30), check=False,
         )
-        token = completed.stdout.decode().strip()
-        if completed.returncode or not token or "\r" in token or "\n" in token:
+        token = completed.stdout.decode().removesuffix("\n").removesuffix("\r")
+        if (completed.returncode or not token or token == "null"
+                or any(char.isspace() or not 33 <= ord(char) <= 126 for char in token)):
             return None
         return token
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
@@ -172,10 +215,16 @@ def unavailable_check(error):
 
 
 def run(args):
+    negative_cases = getattr(args, "negative_cases", [])
+    if negative_cases and not getattr(args, "allow_negative_auth", False):
+        raise ValueError("negative auth cases require --allow-negative-auth")
     models = OrderedDict(args.models)
     model = models["sonnet"]
     stream_body = json.dumps({"model": model, "max_tokens": 8, "stream": True,
                               "messages": [{"role": "user", "content": "Reply only OK"}]})
+    count_body = json.dumps({"model": model, "messages": [{"role": "user", "content": "Reply only OK"}]})
+    operations = {"messages": ("v1/messages", stream_body),
+                  "count_tokens": ("v1/messages/count_tokens", count_body)}
     results = []
     for name, base_url in args.endpoints:
         host = urlsplit(base_url).hostname
@@ -184,10 +233,22 @@ def run(args):
             dns_error = None
         except socket.gaierror:
             addresses, dns_error = [], "dns_error"
-        checks = {"health": health_check(base_url, args.timeout) if not dns_error else unavailable_check(dns_error),
-                  "unauthenticated_messages": (unauthenticated_check(base_url, stream_body, args.timeout)
-                                                if not dns_error else unavailable_check(dns_error))}
+        checks = {"health": health_check(base_url, args.timeout) if not dns_error else unavailable_check(dns_error)}
+        for label, (operation, body) in operations.items():
+            checks[f"unauthenticated_{label}"] = (
+                authorization_check(base_url, operation, body, args.timeout)
+                if not dns_error else check(error=dns_error, expected_status=401))
         results.append({"base_url": base_url, "checks": checks, "dns_addresses": addresses, "name": name})
+
+    for label, expected, helper in negative_cases:
+        negative_token = token_from_helper(helper, args.timeout)
+        for item in results:
+            for operation_label, (operation, body) in operations.items():
+                error = "dns_error" if not item["dns_addresses"] else "helper_error" if not negative_token else None
+                item["checks"][f"negative_{label}_{operation_label}"] = (
+                    check(error=error, expected_status=expected) if error else
+                    authorization_check(item["base_url"], operation, body, args.timeout, expected, negative_token))
+        negative_token = None
 
     token = token_from_helper(args.token_helper, args.timeout)
     headers = {"Authorization": f"Bearer {token}", "content-type": "application/json",
@@ -219,16 +280,29 @@ def run(args):
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "health_semantics": "gateway-local-only",
         "models": models,
+        "negative_auth_cases": [label for label, _, _ in negative_cases],
+        "negative_auth_coverage": "provided-cases-only; unprovided cases not tested",
         "ok": all(item["ok"] for item in results),
         "phase": args.phase,
         "schema_version": 1,
     }
 
 
+def negative_case(value):
+    parts = value.split("=", 2)
+    if (len(parts) != 3 or not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", parts[0])
+            or parts[1] not in {"401", "403"} or not Path(parts[2]).is_absolute()
+            or any(ord(char) < 32 or ord(char) == 127 for char in parts[2])):
+        raise ValueError("negative case must be safe-label=401|403=/absolute/helper")
+    return parts[0], int(parts[1]), parts[2]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", action="append", required=True, help="name=https://host/claude")
     parser.add_argument("--token-helper", required=True)
+    parser.add_argument("--negative-case", action="append", default=[], help="label=401|403=/absolute/helper; repeatable")
+    parser.add_argument("--allow-negative-auth", action="store_true", help="approve negative identity requests")
     parser.add_argument("--model", action="append", required=True,
                         help="role=pinned-deployment; repeat for opus, sonnet, and haiku")
     parser.add_argument("--timeout", type=float, default=60)
@@ -237,6 +311,10 @@ def main(argv=None):
     try:
         args.endpoints = [endpoint(value) for value in args.endpoint]
         args.models = [model_mapping(value) for value in args.model]
+        args.negative_cases = [negative_case(value) for value in args.negative_case]
+        if ((args.negative_cases and not args.allow_negative_auth)
+                or len({label for label, _, _ in args.negative_cases}) != len(args.negative_cases)):
+            raise ValueError("negative cases require opt-in and unique labels")
         if (len({name for name, _ in args.endpoints}) != len(args.endpoints)
                 or len({role for role, _ in args.models}) != len(args.models)
                 or {role for role, _ in args.models} != {"opus", "sonnet", "haiku"}

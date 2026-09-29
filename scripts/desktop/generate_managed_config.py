@@ -3,11 +3,15 @@ import argparse
 import json
 from pathlib import Path
 import plistlib
+import unicodedata
 from urllib.parse import urlsplit
 import uuid
 
 
-POLICY_KEY = r"HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Claude"
+POLICY_KEYS = {
+    "machine": r"HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Claude",
+    "user": r"HKEY_CURRENT_USER\SOFTWARE\Policies\Claude",
+}
 
 
 def build_settings(args: argparse.Namespace) -> dict[str, str]:
@@ -32,7 +36,7 @@ def build_settings(args: argparse.Namespace) -> dict[str, str]:
         "chatAdvancedFileAnalysisEnabled": "false",
         "chatTabEnabled": "true",
         "coworkEgressAllowedHosts": "[]",
-        "coworkTabEnabled": "true",
+        "coworkTabEnabled": "false" if args.disable_cowork else "true",
         "deploymentDisplayName": args.organization,
         "deploymentOrganizationUuid": args.deployment_org_id,
         "disableBundledSkills": "true",
@@ -58,6 +62,10 @@ def build_settings(args: argparse.Namespace) -> dict[str, str]:
 
 
 def validate(args: argparse.Namespace) -> None:
+    for name in ("gateway_url", "tenant_id", "desktop_client_id", "delegated_scope", "deployment_org_id", "organization", "sonnet_model", "opus_model", "haiku_model"):
+        if any(unicodedata.category(character) == "Cc" for character in getattr(args, name)):
+            raise ValueError(f"--{name.replace('_', '-')} must contain no control characters")
+
     for name in ("tenant_id", "desktop_client_id", "deployment_org_id"):
         value = getattr(args, name)
         try:
@@ -67,12 +75,25 @@ def validate(args: argparse.Namespace) -> None:
         if str(parsed) != value.lower():
             raise ValueError(f"--{name.replace('_', '-')} must be a canonical UUID")
 
-    gateway = urlsplit(args.gateway_url)
-    if gateway.scheme != "https" or not gateway.netloc or gateway.username or gateway.query or gateway.fragment or gateway.path.rstrip("/").endswith("/v1"):
+    try:
+        gateway = urlsplit(args.gateway_url)
+        gateway.port  # Validate malformed and out-of-range ports even when the port is unused.
+    except ValueError as error:
+        raise ValueError("--gateway-url must be a valid HTTPS URL") from error
+    if (gateway.scheme != "https" or not gateway.hostname or "@" in gateway.netloc
+            or any(character.isspace() for character in args.gateway_url)
+            or "?" in args.gateway_url or "#" in args.gateway_url
+            or gateway.path.rstrip("/").endswith("/v1")):
         raise ValueError("--gateway-url must be an HTTPS URL without credentials, query, or fragment")
 
-    scope = urlsplit(args.delegated_scope)
-    if scope.scheme not in {"api", "https"} or not scope.netloc or not scope.path.strip("/"):
+    try:
+        scope = urlsplit(args.delegated_scope)
+        scope.port
+    except ValueError as error:
+        raise ValueError("--delegated-scope must be a valid delegated scope URI") from error
+    if (scope.scheme not in {"api", "https"} or not scope.hostname or "@" in scope.netloc
+            or not scope.path.strip("/") or any(character.isspace() for character in args.delegated_scope)
+            or "?" in args.delegated_scope or "#" in args.delegated_scope):
         raise ValueError("--delegated-scope must be a full api:// or https:// delegated scope URI")
 
     for name in ("organization", "sonnet_model", "opus_model", "haiku_model"):
@@ -115,16 +136,16 @@ def write_outputs(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     macos = output_dir / "claude-desktop-managed.mobileconfig"
     macos.write_bytes(plistlib.dumps(profile, fmt=plistlib.FMT_XML, sort_keys=True))
 
-    lines = ["Windows Registry Editor Version 5.00", "", f"[{POLICY_KEY}]"]
+    policy_key = POLICY_KEYS[args.windows_scope]
+    lines = ["Windows Registry Editor Version 5.00", "", f"[{policy_key}]"]
     lines.extend(f'"{key}"="{value.replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"' for key, value in settings.items())
     windows = output_dir / "claude-desktop-managed.reg"
     windows.write_bytes(b"\xff\xfe" + ("\r\n".join(lines) + "\r\n").encode("utf-16le"))
 
     removal = output_dir / "claude-desktop-managed-remove.reg"
-    removal.write_bytes(
-        b"\xff\xfe"
-        + (f"Windows Registry Editor Version 5.00\r\n\r\n[-{POLICY_KEY}]\r\n").encode("utf-16le")
-    )
+    remove_lines = ["Windows Registry Editor Version 5.00", "", f"[{policy_key}]"]
+    remove_lines.extend(f'"{key}"=-' for key in settings)
+    removal.write_bytes(b"\xff\xfe" + ("\r\n".join(remove_lines) + "\r\n").encode("utf-16le"))
     return macos, windows, removal
 
 
@@ -139,6 +160,8 @@ def main() -> None:
     parser.add_argument("--sonnet-model", required=True)
     parser.add_argument("--opus-model", required=True)
     parser.add_argument("--haiku-model", required=True)
+    parser.add_argument("--windows-scope", choices=("machine", "user"), default="machine")
+    parser.add_argument("--disable-cowork", action="store_true")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     try:

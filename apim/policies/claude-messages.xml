@@ -1,8 +1,15 @@
 <policies>
   <inbound>
     <base />
-    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@((string)context.Variables[&quot;callerKey&quot;])" />
-    <llm-token-limit counter-key="@((string)context.Variables[&quot;callerKey&quot;])" tokens-per-minute="{{per-user-token-limit}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" />
+    <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@(&quot;claude-foundry:rpm:&quot; + (string)context.Variables[&quot;callerKey&quot;])" />
+    <choose>
+      <when condition="@(long.Parse(&quot;{{per-user-monthly-token-quota}}&quot;) &gt; 0)">
+        <llm-token-limit counter-key="@(&quot;claude-foundry:tokens:&quot; + (string)context.Variables[&quot;callerKey&quot;])" tokens-per-minute="{{per-user-token-limit}}" token-quota="@(long.Parse(&quot;{{per-user-monthly-token-quota}}&quot;))" token-quota-period="Monthly" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" remaining-quota-tokens-header-name="x-remaining-user-monthly-tokens" />
+      </when>
+      <otherwise>
+        <llm-token-limit counter-key="@(&quot;claude-foundry:tokens:&quot; + (string)context.Variables[&quot;callerKey&quot;])" tokens-per-minute="{{per-user-token-limit}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-remaining-user-tokens" />
+      </otherwise>
+    </choose>
   </inbound>
   <backend>
     <base />

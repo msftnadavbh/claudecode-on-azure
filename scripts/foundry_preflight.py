@@ -73,6 +73,7 @@ def run(args):
                      "--name", args.account, "--subscription", args.subscription)
     by_name = {item.get("name"): item for item in deployments}
     report_deployments = {}
+    warnings = ["Quota rows are regional usage only; quota scope and deployment headroom are not inferred."]
     for role, deployment_name in sorted(wanted.items()):
         deployment = by_name.get(deployment_name)
         properties = deployment.get("properties", {}) if deployment else {}
@@ -83,7 +84,15 @@ def run(args):
         report_deployments[role] = {
             "capacity": sku.get("capacity"), "deployment": deployment_name, "model": model.get("name"),
             "sku": sku.get("name"), "version": model.get("version"),
+            "version_upgrade_option": properties.get("versionUpgradeOption"),
         }
+        if not str(model.get("version") or "").strip():
+            warnings.append(f"{role}: model version missing or blank; version stability unestablished.")
+        upgrade = properties.get("versionUpgradeOption")
+        if not upgrade or not str(upgrade).strip():
+            warnings.append(f"{role}: version upgrade policy unknown; version stability unestablished.")
+        elif upgrade != "NoAutoUpgrade":
+            warnings.append(f"{role}: version upgrade policy is not NoAutoUpgrade; version stability unestablished.")
 
     usage = az("cognitiveservices", "usage", "list", "--location", account.get("location", ""),
                "--subscription", args.subscription)
@@ -95,7 +104,6 @@ def run(args):
             quota_rows.append({"current_value": row.get("currentValue"), "limit": row.get("limit"),
                                "name": label, "unit": row.get("unit")})
     quota_rows.sort(key=lambda row: row["name"])
-    warnings = ["Quota rows are regional usage only; quota scope and deployment headroom are not inferred."]
     if not quota_rows:
         warnings.append("No Claude/Anthropic quota rows were returned; this is a warning, not a quota failure.")
     return {

@@ -3,6 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import plistlib
+import re
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts/desktop"))
-from generate_managed_config import write_outputs
+from generate_managed_config import build_settings, write_outputs
 
 
 class DesktopManagedConfigTests(unittest.TestCase):
@@ -28,6 +29,8 @@ class DesktopManagedConfigTests(unittest.TestCase):
             opus_model="opus-pinned",
             haiku_model="haiku-pinned",
             output_dir=self.directory.name,
+            windows_scope="machine",
+            disable_cowork=False,
         )
 
     def test_semantic_configuration(self) -> None:
@@ -58,13 +61,79 @@ class DesktopManagedConfigTests(unittest.TestCase):
         for path in (windows, removal):
             raw = path.read_bytes()
             self.assertTrue(raw.startswith(b"\xff\xfe"))
-            raw.decode("utf-16")
+            text = raw.decode("utf-16")
+            self.assertNotIn("\n", text.replace("\r\n", ""))
 
         outputs = macos.read_bytes().decode() + windows.read_bytes().decode("utf-16")
         lowered = outputs.lower()
         for forbidden in ("apikey", "api_key", "credentialhelper", "auth_token", "static credential"):
             self.assertNotIn(forbidden, lowered)
-        self.assertIn("[-HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Claude]", removal.read_bytes().decode("utf-16"))
+        self.assertIn("[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Claude]", removal.read_bytes().decode("utf-16"))
+
+    def test_windows_roundtrip_and_scoped_removal(self) -> None:
+        self.args.organization = 'Exämple "Corp" \\ Division'
+        self.args.sonnet_model = self.args.opus_model = self.args.haiku_model = "opus-5-5"
+        self.args.windows_scope = "user"
+        self.args.disable_cowork = True
+        macos, windows, removal = write_outputs(self.args)
+        settings = build_settings(self.args)
+        lines = windows.read_bytes().decode("utf-16").splitlines()
+        self.assertEqual(lines[2], r"[HKEY_CURRENT_USER\SOFTWARE\Policies\Claude]")
+        entries = {}
+        for line in lines[3:]:
+            match = re.fullmatch(r'("(?:\\.|[^"\\])*")=("(?:\\.|[^"\\])*")', line)
+            self.assertIsNotNone(match, line)
+            entries[json.loads(match[1])] = json.loads(match[2])
+        self.assertEqual(entries, settings)
+        self.assertEqual(settings["coworkTabEnabled"], "false")
+        models = json.loads(entries["inferenceModels"])
+        self.assertEqual({model["anthropicFamilyTier"] for model in models}, {"opus", "sonnet", "haiku"})
+        self.assertEqual([model["name"] for model in models], ["opus-5-5"] * 3)
+        profile_settings = plistlib.loads(macos.read_bytes())["PayloadContent"][0]["PayloadContent"]["com.anthropic.claudefordesktop"]["Forced"][0]["mcx_preference_settings"]
+        self.assertEqual(profile_settings["coworkTabEnabled"], "false")
+
+        remove_lines = removal.read_bytes().decode("utf-16").splitlines()
+        self.assertEqual(remove_lines[2], lines[2])
+        self.assertEqual(set(remove_lines[3:]), {f'"{key}"=-' for key in settings})
+        self.assertFalse(any(line.startswith("[-") for line in remove_lines))
+        existing = {**entries, "UnrelatedPolicy": "keep"}
+        for line in remove_lines[3:]:
+            existing.pop(json.loads(line[:-2]), None)
+        self.assertEqual(existing, {"UnrelatedPolicy": "keep"})
+
+    def test_malformed_inputs_fail_before_writing(self) -> None:
+        invalid = {
+            "gateway_url": (
+                "https://gateway.example/claude\r\n\"Injected\"=\"true\"",
+                "https://@gateway.example/claude",
+                "https://user:pass@gateway.example/claude",
+                "https://gateway.example:invalid/claude",
+                "https://gateway.example:65536/claude",
+                "https://gateway.example/claude?debug=1",
+            ),
+            "delegated_scope": (
+                "api://app/Claude.Access extra.scope",
+                "api://app/Claude.Access\tother.scope",
+                "api://app/Claude.Access?extra=scope",
+                "api://app/Claude.Access#extra",
+                "api://@app/Claude.Access",
+                "https://user:pass@app/Claude.Access",
+                "api://app:bad/Claude.Access",
+            ),
+            "organization": ("Unsafe\n\"Injected\"=\"true\"",),
+            "opus_model": ("opus\x7fnot-a-model",),
+        }
+        for name, values in invalid.items():
+            original = getattr(self.args, name)
+            for value in values:
+                with self.subTest(option=name, value=value):
+                    setattr(self.args, name, value)
+                    output = Path(self.directory.name) / "not-created"
+                    self.args.output_dir = str(output)
+                    with self.assertRaises(ValueError):
+                        write_outputs(self.args)
+                    self.assertFalse(output.exists())
+            setattr(self.args, name, original)
 
 
 if __name__ == "__main__":

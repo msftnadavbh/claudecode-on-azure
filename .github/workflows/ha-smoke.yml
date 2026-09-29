@@ -44,6 +44,7 @@ jobs:
       - name: Observe endpoint matrix
         env:
           APIM_AUDIENCE: ${{ vars.APIM_EXPECTED_AUDIENCE }}
+          APIM_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
           APIM_PRIMARY_BASE_URL: ${{ vars.APIM_PRIMARY_BASE_URL }}
           APIM_SECONDARY_BASE_URL: ${{ vars.APIM_SECONDARY_BASE_URL }}
           APIM_FAILOVER_BASE_URL: ${{ vars.APIM_FAILOVER_BASE_URL }}

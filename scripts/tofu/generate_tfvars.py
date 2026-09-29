@@ -40,6 +40,9 @@ def attestation_value(name):
 
 
 def values():
+    quota_raw = os.environ.get("PER_USER_MONTHLY_TOKEN_QUOTA", "").strip() or "0"
+    if not quota_raw.isascii() or not quota_raw.isdecimal() or int(quota_raw) > 9223372036854775807:
+        raise ValueError("PER_USER_MONTHLY_TOKEN_QUOTA must be an integer between 0 and 9223372036854775807")
     profile = required("ENVIRONMENT_PROFILE")
     if profile not in ("poc", "prod"):
         raise ValueError("ENVIRONMENT_PROFILE must be poc or prod")
@@ -95,6 +98,7 @@ def values():
         "haiku_deployment_name": "" if mode == "greenfield" else required("ANTHROPIC_DEFAULT_HAIKU_MODEL"),
         "per_user_rate_limit": integer("PER_USER_RATE_LIMIT"),
         "per_user_token_limit": integer("PER_USER_TOKEN_LIMIT"),
+        "per_user_monthly_token_quota": int(quota_raw),
         "per_user_concurrent_stream_limit": integer("PER_USER_CONCURRENT_STREAM_LIMIT"),
         "aggregate_concurrent_stream_limit": integer("AGGREGATE_CONCURRENT_STREAM_LIMIT"),
         "apim_sku_name": os.environ.get("APIM_SKU", "StandardV2"),

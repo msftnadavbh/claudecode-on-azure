@@ -1,6 +1,28 @@
 # OpenTofu Deployment Migration Plan
 
-Status: **STATE B — OpenTofu is the preferred, active deployment path; Bicep is deprecated and non-authoritative.**
+Status: **Focused Opus 5.5 gateway/CLI and local Windows Desktop Chat pilots verified; temporary monthly-quota rehearsal restored; full OpenTofu adoption remains unvalidated.**
+
+The focused live work upgraded the model and strict APIM Entra pilot authentication, verified Linux Claude Code and local Windows Desktop Chat via its existing helper-script Gateway configuration, and temporarily installed then removed a native monthly quota. See [gateway/CLI](../docs/opus-5-5-pilot.md), [Desktop](../docs/windows-desktop-pilot.md), and [quota rehearsal](../docs/live-budget-demo.md) for evidence and limits. The historical inventory/validation below predates these pilots; it does not describe the current API authorization or model inventory and does **not** authorize a full IaC apply.
+
+## Current deployment request
+
+- Deploy only to subscription `68eab0d1-ab81-4851-b2dd-173dede87582` (`MCAPS-Hybrid-REQ-162389-2026-nadavbh`).
+- Tenant: `fdpo.onmicrosoft.com`, tenant ID `16b3c013-d300-468d-ac64-7eda0820b6d3`.
+- OpenTofu remains the active deployment path; Bicep is deprecated and non-authoritative.
+- Existing target: `claudepoc-rg`, `eastus2`; APIM `apim-claudecode-project-test-01` (StandardV2, capacity 1); Foundry `project-test-01`, project `proj-default`, existing `claude-opus-5` and pilot `claude-opus-5-5` version `2` (GlobalStandard, capacity 40 for the pilot deployment).
+- Preserve existing resources; use existing mode rather than greenfield. Caller identity configuration and remote state ownership remain unresolved.
+- All writable provider, backend, RBAC, and telemetry scopes must remain in the authorized subscription. Do not use cross-subscription defaults or create replacement resources without approval.
+- Next steps: refresh read-only inventory; confirm deployment inputs/state ownership, API/backend identifiers and strict pilot authorization; validate and review a non-destructive plan; deploy only after prerequisites pass.
+- Historical migration evidence below does not validate this deployment or authorize cross-subscription access.
+
+### Historical pre-pilot inventory and blockers (not current configuration)
+
+- Read-only inventory at that time confirmed all candidate resources were in the authorized subscription and tenant; this line does not describe later pilot changes.
+- APIM is provisioned with system-assigned identity and public networking. Its existing API ID is `claude-api`, path `/claude`; **subscription keys were required before the pilot, but are now disabled on this API with strict Entra validation**. IaC currently hardcodes API ID `claude` and a different backend ID; reviewed adoption/name-compatibility and authorization reconciliation are required before applying, not a duplicate API or destructive replacement.
+- Foundry local authentication is disabled. Existing model upgrade policy is `OnceNewDefaultVersionAvailable`; no upgrade-policy change has been authorized or made.
+- No local ARM/backend environment variables are configured. Target inventory found no dedicated deployment-state storage; the governance storage account must not be repurposed implicitly.
+- The `msftnadavbh/claudecode-on-azure` GitHub environment listing returned no environments. Protected deployment/OIDC/state prerequisites are not established by this inventory.
+- Required next decisions: provide the existing state owner/backend coordinates or approve dedicated state bootstrap; confirm adoption of the existing gateway, current strict caller Entra configuration, and deployment route. Do not re-enable key-only access or replace strict pilot authorization with the repository's broader role-OR-Desktop design without approval.
 
 ## Scope
 
@@ -38,15 +60,15 @@ OpenTofu is the preferred, active Azure deployment implementation. Preserve runt
 - Plan/apply OIDC identities with state-container access and least-privilege Azure RBAC.
 - Live resource inventory and reviewed import manifest.
 
-## Validation Proof
+## Historical local validation proof (not current full IaC validation)
 
 - `tofu fmt -check -recursive`: passed.
 - `tofu init -backend=false -input=false -lockfile=readonly`: passed.
 - `tofu validate`: passed.
-- Python unit tests and migration tests pass in aggregate repository validation.
-- Aggregate repository validation: passed.
+- Python unit tests and migration tests passed at the time in aggregate repository validation.
+- Aggregate repository validation passed at the time; rerun on current changes before any adoption. `validate.sh` runs Python compilation and OpenTofu init (local writes), not a read-only cloud preflight. Native Windows helper tests skip on Linux and require an actual Windows pilot.
 - Remote backend access, state imports, and live plan: blocked until external state/OIDC prerequisites are configured.
-- Read-only Azure check: current subscription contains no APIM instance and no OpenTofu backend variables are configured; no live import/plan was attempted.
+- Historical pre-migration Azure check found no APIM in the then-selected subscription. The currently locked subscription does contain the pilot APIM documented above; remote OpenTofu adoption remains pending.
 
 ## Role Assignment Verification
 

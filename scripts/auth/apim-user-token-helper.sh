@@ -8,13 +8,21 @@ if ! command -v az >/dev/null 2>&1; then
 fi
 
 APIM_AUDIENCE="${APIM_AUDIENCE:-}"
-if [[ -z "${APIM_AUDIENCE}" ]]; then
-  echo "APIM_AUDIENCE must be set (for example api://example-claude-gateway)" >&2
+APIM_TENANT_ID="${APIM_TENANT_ID:-}"
+if [[ -z "${APIM_AUDIENCE//[[:space:]]/}" || -z "${APIM_TENANT_ID//[[:space:]]/}" ]]; then
+  echo "APIM_AUDIENCE and APIM_TENANT_ID must be set" >&2
   exit 1
 fi
 
-token="$(az account get-access-token --resource "${APIM_AUDIENCE}" --query accessToken --output tsv)"
-if [[ -z "${token}" || "${token}" == "null" ]]; then
+# Keep a sentinel so command substitution cannot hide extra trailing newlines.
+if ! token="$(az account get-access-token --tenant "${APIM_TENANT_ID}" --resource "${APIM_AUDIENCE}" --query accessToken --output tsv </dev/null 2>/dev/null && printf '.')"; then
+  echo "Unable to acquire access token" >&2
+  exit 1
+fi
+token="${token%.}"
+token="${token%$'\n'}"
+token="${token%$'\r'}"
+if [[ -z "${token}" || "${token}" == "null" || "${token}" == *[[:space:][:cntrl:]]* ]]; then
   echo "Unable to acquire access token" >&2
   exit 1
 fi

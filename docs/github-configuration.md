@@ -2,7 +2,7 @@
 
 Configure this inventory in the GitHub environment selected by the workflow. Create GitHub environments, Azure federated identities, and external Blob state first. The workflow uses OIDC and does not create identities, environments, state storage, or reviewer rules.
 
-`deploy` accepts `environment_profile` (`poc` or `prod`), `networking_profile` (`public` or `private`), `deployment_mode` (`existing` default or `greenfield`), and Marketplace acceptance. Its `prod` input maps to the `prod-primary` GitHub environment; `poc` maps to `poc`. The networking input must match `APIM_NETWORKING_PROFILE` for `prod`. Do not change mode for an existing state; greenfield needs a new state key.
+`deploy` accepts `environment_profile` (`poc` or `prod`), `networking_profile` (`public` or `private`), `deployment_mode` (`existing` default or `greenfield`), and Marketplace acceptance. Its `prod` input maps to the `prod-primary` GitHub environment; `poc` maps to `poc`. The networking input must match `APIM_NETWORKING_PROFILE` for **every** profile, including `poc`. Do not change mode for an existing state; greenfield needs a new state key.
 
 ## Secrets
 
@@ -19,10 +19,10 @@ Configure this inventory in the GitHub environment selected by the workflow. Cre
 | Variables | Value |
 | --- | --- |
 | `AZURE_LOCATION`, `APIM_NAME`, `APIM_PUBLISHER_EMAIL`, `APIM_PUBLISHER_NAME` | Primary APIM identity and location. |
-| `ENTRA_TENANT_ID`, `APIM_EXPECTED_AUDIENCE`, `APIM_REQUIRED_APP_ROLE` | Caller-token validation. |
+| `ENTRA_TENANT_ID`, `APIM_EXPECTED_AUDIENCE`, `APIM_REQUIRED_APP_ROLE` | Caller-token validation. Both smoke workflows export `APIM_TENANT_ID` from `vars.ENTRA_TENANT_ID`, not from the infrastructure login tenant, and `APIM_AUDIENCE` from `APIM_EXPECTED_AUDIENCE`. |
 | `FOUNDRY_BASE_URL`, `FOUNDRY_SUBSCRIPTION_ID`, `FOUNDRY_RESOURCE_GROUP`, `FOUNDRY_ACCOUNT_NAME` | Existing Foundry target. The URL is `https://<account>.services.ai.azure.com/anthropic`. Greenfield reuses only `FOUNDRY_ACCOUNT_NAME` and derives the rest in the target subscription. |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Three existing, allowlisted deployment names. |
-| `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, `PER_USER_CONCURRENT_STREAM_LIMIT`, `AGGREGATE_CONCURRENT_STREAM_LIMIT` | Measured controls; require `per-user < aggregate < 2048`. RPM/TPM apply to messages; concurrency is gateway-local and approximate. |
+| `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, `PER_USER_CONCURRENT_STREAM_LIMIT`, `AGGREGATE_CONCURRENT_STREAM_LIMIT` | Measured controls; require concurrency `per-user < aggregate < 2048`. Shared RPM applies to both inference operations; TPM applies to messages only. Controls are gateway-local and approximate. |
 | `APIM_SKU`, `APIM_ZONE_REDUNDANT`, `APIM_DEFAULT_CAPACITY` | `StandardV2`, `false`, and a measured fixed capacity for the public baseline. |
 | `TOFU_STATE_SUBSCRIPTION_ID`, `TOFU_STATE_RG`, `TOFU_STATE_STORAGE_ACCOUNT`, `TOFU_STATE_CONTAINER`, `TOFU_STATE_KEY` | Existing Azure Blob backend coordinates. |
 
@@ -32,6 +32,7 @@ For greenfield also configure `FOUNDRY_PROJECT_NAME`, `FOUNDRY_LOCATION`, `CLAUD
 
 | Variables | When required / behavior |
 | --- | --- |
+| `PER_USER_MONTHLY_TOKEN_QUOTA` | Optional integer 0..9223372036854775807; unset/blank/0 disables it. No positive default. Keep disabled until live policy validation. See [quota semantics](security.md#optional-monthly-token-quota). |
 | `DEPLOY_SECONDARY` | Defaults to `false`. When `true`, require `AZURE_SECONDARY_LOCATION` and `APIM_SECONDARY_NAME`. A blank secondary Foundry URL uses the primary target. |
 | `SECONDARY_FOUNDRY_BASE_URL`, `SECONDARY_FOUNDRY_SUBSCRIPTION_ID`, `SECONDARY_FOUNDRY_RESOURCE_GROUP`, `SECONDARY_FOUNDRY_ACCOUNT_NAME` | Provide all four to use a secondary Foundry target; its deployment names must match the primary names. |
 | `APIM_NETWORKING_PROFILE` | Defaults to `public`. Set `private` only with `PremiumV2` and `APIM_SUBNET_RESOURCE_ID`; also supply `APIM_SECONDARY_SUBNET_RESOURCE_ID` when deploying secondary. |
@@ -48,4 +49,6 @@ Protect `prod-primary` with required reviewers. The plan job initializes the bac
 
 ## HA smoke environment values
 
-The protected `ha-smoke` workflow uses `prod-primary`, `AZURE_SMOKE_CLIENT_ID`, `AZURE_TENANT_ID`, and these environment variables: `APIM_EXPECTED_AUDIENCE`, the three model deployment variables, `APIM_PRIMARY_BASE_URL`, optional `APIM_SECONDARY_BASE_URL`, and optional `APIM_FAILOVER_BASE_URL`. URLs include `/claude`, for example `https://<apim-name>.azure-api.net/claude`; set the failover URL to your selected endpoint or the Traffic Manager FQDN plus `/claude`. Run it only from the required labeled, in-network self-hosted runner.
+Deployment smoke supplies all three model variables to the shared [smoke adapter](client-authentication.md#standalone-smoke-inputs): existing-mode values per role, or the one greenfield deployment for each role. Token counting checks all three mappings; only Sonnet performs inference. The app-only identity and outer retry loop are unchanged; no negative identities are autoenabled.
+
+The protected `ha-smoke` workflow uses `prod-primary`, `AZURE_SMOKE_CLIENT_ID`, `AZURE_TENANT_ID`, and these environment variables: `ENTRA_TENANT_ID`, `APIM_EXPECTED_AUDIENCE`, the three model deployment variables, `APIM_PRIMARY_BASE_URL`, optional `APIM_SECONDARY_BASE_URL`, and optional `APIM_FAILOVER_BASE_URL`. URLs include `/claude`, for example `https://<apim-name>.azure-api.net/claude`; set the failover URL to your selected endpoint or the Traffic Manager FQDN plus `/claude`. Run it only from the required labeled, in-network self-hosted runner. Configure the caller tenant variable before updating the helper. The federated smoke identity must be able to obtain the audience token in that caller tenant; differing infrastructure and caller tenants do not imply cross-tenant consent or access.
