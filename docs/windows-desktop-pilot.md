@@ -12,6 +12,18 @@ Native Claude Desktop `2.7032.0.0` was relaunched through its registered Windows
 
 The active local configuration leaves Code and Cowork enabled by their defaults; both are untested. Hardening options from the separately generated MDM profile were **not applied** to this existing local configuration.
 
+### Local metadata recovery after a Desktop update
+
+In Desktop `2.9939.4`, the observed configuration editor uses `entries.map`, while the runtime uses `appliedId` to select the applied JSON. A missing `entries` in `configLibrary/_meta.json` can therefore break the editor even when the applied Gateway profile is intact. This script only repairs that missing index; it does not alter the profile, credentials, policy, or gateway. The earlier live metadata repair kept the applied profile hash unchanged and Desktop was relaunched; GUI error clearance has **not** been verified.
+
+Manually **fully quit Claude Desktop first** (including background instances); this script does not check processes and cannot prevent concurrent writes. From a native Windows command prompt with Python installed, run from this repository:
+
+```cmd
+py -3 scripts\desktop\repair_config_metadata.py
+```
+
+The default directory is `%LOCALAPPDATA%\Claude-3p\configLibrary`; if using another local copy, pass `--config-dir "C:\path\to\configLibrary"`. Optional `--name "Gateway"` controls only a newly created entry name. The script requires an existing canonical UUID `appliedId` and a readable JSON-object applied profile, refuses malformed or ambiguous indexes and multiple UUID profiles, and never creates the config directory. It writes the original metadata bytes once to the exclusive backup `%LOCALAPPDATA%\Claude-3p\configLibrary-meta.backup.json` (outside `configLibrary`); if that file already exists, stop and inspect it rather than overwrite it. A valid existing index is left byte-for-byte unchanged. After repair, relaunch Desktop manually and verify the configuration editor and actual Chat behavior in the GUI; successful script execution alone does not prove the GUI error is clear. To roll back, fully quit Desktop again, inspect the backup, and restore its original bytes to `_meta.json` manually.
+
 The dedicated Desktop public-client app described below was prepared for the alternative browser-OIDC route. It remains unused and unactivated at APIM. Its consent denial does not block the existing helper route; do not use preauthorization or another privilege change to bypass that denial.
 
 ## Earlier MDM/OIDC preparation (not applied)
