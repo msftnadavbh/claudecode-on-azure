@@ -183,6 +183,46 @@ class DesktopManagedConfigTests(unittest.TestCase):
         self.assertIn('"modelDiscoveryEnabled"="true"', windows)
         self.assertIn('"inferenceModels"=-', windows)
 
+    def test_discovery_cli_needs_no_unused_model_pins(self):
+        arguments = [sys.executable, "-B", str(REPO_ROOT / "scripts/desktop/generate_managed_config.py")]
+        for name, value in vars(self.args).items():
+            if name != "disable_cowork" and not name.endswith("_model"):
+                arguments.extend(["--" + name.replace("_", "-"), value])
+        missing = subprocess.run(arguments, capture_output=True, text=True)
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("required unless --enable-model-discovery", missing.stderr)
+        self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+        result = subprocess.run(arguments + ["--enable-model-discovery"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        profile = plistlib.loads((Path(self.directory.name) / "claude-desktop-managed.mobileconfig").read_bytes())
+        settings = profile["PayloadContent"][0]["PayloadContent"]["com.anthropic.claudefordesktop"]["Forced"][0]["mcx_preference_settings"]
+        self.assertEqual(settings["modelDiscoveryEnabled"], "true")
+        self.assertNotIn("inferenceModels", settings)
+        self.assertEqual(settings["inferenceProvider"], "gateway")
+
+    def test_each_static_model_pin_remains_required(self):
+        for family in ("sonnet", "opus", "haiku"):
+            with self.subTest(family=family):
+                args = argparse.Namespace(**vars(self.args))
+                setattr(args, f"{family}_model", None)
+                with self.assertRaisesRegex(ValueError, f"--{family}-model is required"):
+                    write_outputs(args)
+                self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+
+    def test_macos_profile_identity_survives_discovery_and_rollback(self):
+        macos, _, _ = write_outputs(self.args)
+        original = plistlib.loads(macos.read_bytes())
+        self.args.enable_model_discovery = True
+        write_outputs(self.args)
+        discovered = plistlib.loads(macos.read_bytes())
+        for key in ("PayloadUUID", "PayloadIdentifier", "PayloadScope"):
+            self.assertEqual(discovered[key], original[key])
+        for key in ("PayloadUUID", "PayloadIdentifier", "PayloadType"):
+            self.assertEqual(discovered["PayloadContent"][0][key], original["PayloadContent"][0][key])
+        self.args.enable_model_discovery = False
+        write_outputs(self.args)
+        self.assertEqual(plistlib.loads(macos.read_bytes()), original)
+
 
 if __name__ == "__main__":
     unittest.main()

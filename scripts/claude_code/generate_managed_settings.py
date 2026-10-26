@@ -18,6 +18,11 @@ PLATFORM_PATHS = {
 WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL"} | {f"{prefix}{i}" for prefix in ("COM", "LPT") for i in range(1, 10)}
 
 
+def selected_platforms(args: argparse.Namespace) -> tuple[str, ...]:
+    platform = getattr(args, "platform", "all")
+    return tuple(PLATFORM_PATHS) if platform == "all" else (platform,)
+
+
 def _nonempty(value: str, option: str) -> str:
     if not value.strip() or any(ord(character) < 32 for character in value):
         raise ValueError(f"{option} must be non-empty and contain no control characters")
@@ -35,18 +40,26 @@ def validate(args: argparse.Namespace) -> None:
     if audience.scheme not in {"api", "https"} or not audience.netloc:
         raise ValueError("--audience must be a full api:// or https:// audience URI")
 
-    if not PurePosixPath(args.macos_helper_path).is_absolute() or not PurePosixPath(args.linux_helper_path).is_absolute():
-        raise ValueError("macOS and Linux helper paths must be absolute")
-    windows = args.windows_helper_path.replace("/", "\\")
-    parts = windows[3:].split("\\")
-    if (not re.fullmatch(r"[A-Za-z]:\\[A-Za-z0-9_.\\-]+", windows)
-            or not PureWindowsPath(windows).is_absolute()
-            or any(not part or part in {".", ".."} or part.endswith(".")
-                   or part.split(".")[0].upper() in WINDOWS_DEVICES
-                   for part in parts)):
-        raise ValueError("--windows-helper-path must be a safe drive-qualified ASCII path without spaces or shell metacharacters")
+    for platform in selected_platforms(args):
+        option = f"--{platform}-helper-path"
+        helper = getattr(args, f"{platform}_helper_path", None)
+        if helper is None:
+            raise ValueError(f"{option} is required for {platform}")
+        _nonempty(helper, option)
+        if platform != "windows":
+            if not PurePosixPath(helper).is_absolute():
+                raise ValueError(f"{option} must be absolute")
+            continue
+        windows = helper.replace("/", "\\")
+        parts = windows[3:].split("\\")
+        if (not re.fullmatch(r"[A-Za-z]:\\[A-Za-z0-9_.\\-]+", windows)
+                or not PureWindowsPath(windows).is_absolute()
+                or any(not part or part in {".", ".."} or part.endswith(".")
+                       or part.split(".")[0].upper() in WINDOWS_DEVICES
+                       for part in parts)):
+            raise ValueError("--windows-helper-path must be a safe drive-qualified ASCII path without spaces or shell metacharacters")
 
-    for option in ("--macos-helper-path", "--linux-helper-path", "--windows-helper-path", "--opus-model", "--sonnet-model", "--haiku-model"):
+    for option in ("--opus-model", "--sonnet-model", "--haiku-model"):
         _nonempty(getattr(args, option[2:].replace("-", "_")), option)
 
 
@@ -75,15 +88,11 @@ def write_outputs(args: argparse.Namespace) -> dict[str, Path]:
     validate(args)
     output_dir = Path(args.output_dir)
     outputs = {}
-    helper_paths = {
-        "macos": args.macos_helper_path,
-        "linux": args.linux_helper_path,
-        "windows": args.windows_helper_path,
-    }
-    for platform in PLATFORM_PATHS:
+    for platform in selected_platforms(args):
         path = output_dir / platform / "managed-settings.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes((json.dumps(build_settings(args, helper_paths[platform], platform), indent=2, sort_keys=True) + "\n").encode("utf-8"))
+        helper_path = getattr(args, f"{platform}_helper_path")
+        path.write_bytes((json.dumps(build_settings(args, helper_path, platform), indent=2, sort_keys=True) + "\n").encode("utf-8"))
         outputs[platform] = path
     return outputs
 
@@ -93,9 +102,10 @@ def main() -> None:
     parser.add_argument("--gateway-url", required=True)
     parser.add_argument("--audience", required=True)
     parser.add_argument("--tenant-id", required=True)
-    parser.add_argument("--macos-helper-path", required=True)
-    parser.add_argument("--linux-helper-path", required=True)
-    parser.add_argument("--windows-helper-path", required=True)
+    parser.add_argument("--platform", choices=("all", *PLATFORM_PATHS), default="all", help="Generate only this OS; only its helper path is required (default: all).")
+    parser.add_argument("--macos-helper-path")
+    parser.add_argument("--linux-helper-path")
+    parser.add_argument("--windows-helper-path")
     parser.add_argument("--opus-model", required=True)
     parser.add_argument("--sonnet-model", required=True)
     parser.add_argument("--haiku-model", required=True)

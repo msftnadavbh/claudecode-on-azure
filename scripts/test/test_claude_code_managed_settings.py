@@ -85,6 +85,46 @@ class ClaudeCodeManagedSettingsTests(unittest.TestCase):
         self.assertEqual(json.loads(outputs["macos"].read_text(encoding="utf-8"))["apiKeyHelper"], shlex.quote(self.args.macos_helper_path))
         self.assertEqual(json.loads(outputs["windows"].read_text(encoding="utf-8"))["apiKeyHelper"], self.args.windows_helper_path)
 
+    def test_single_platform_cli_needs_only_selected_helper(self):
+        for platform in PLATFORM_PATHS:
+            with self.subTest(platform=platform):
+                output = Path(self.directory.name) / platform
+                arguments = [sys.executable, "-B", str(REPO_ROOT / "scripts/claude_code/generate_managed_settings.py"),
+                             "--platform", platform, "--enable-model-discovery"]
+                for name, value in vars(self.args).items():
+                    if name.endswith("_helper_path") and name != f"{platform}_helper_path":
+                        continue
+                    arguments.extend(["--" + name.replace("_", "-"),
+                                      str(output) if name == "output_dir" else value])
+                result = subprocess.run(arguments, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(list(output.iterdir()), [output / platform])
+                settings = json.loads((output / platform / "managed-settings.json").read_text())
+                self.assertEqual(settings["env"]["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"], "1")
+                self.assertEqual(settings["env"]["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"], "1")
+                self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "opus-pinned")
+                self.assertIn(PLATFORM_PATHS[platform], result.stdout)
+
+    def test_selected_helper_required_before_any_output(self):
+        for platform in PLATFORM_PATHS:
+            for selection in ("all", platform):
+                with self.subTest(platform=platform, selection=selection):
+                    args = argparse.Namespace(**vars(self.args), platform=selection)
+                    setattr(args, f"{platform}_helper_path", None)
+                    with self.assertRaisesRegex(ValueError, f"--{platform}-helper-path is required"):
+                        write_outputs(args)
+                    self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+
+    def test_selected_posix_helper_must_be_absolute_and_nonempty(self):
+        for platform in ("macos", "linux"):
+            for helper in ("", "relative/helper.sh", "~/helper.sh", "/helper\n.sh"):
+                with self.subTest(platform=platform, helper=helper):
+                    args = argparse.Namespace(**vars(self.args), platform=platform)
+                    setattr(args, f"{platform}_helper_path", helper)
+                    with self.assertRaises(ValueError):
+                        write_outputs(args)
+                    self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+
     def test_posix_helper_is_one_literal_shell_command(self):
         marker = Path(self.directory.name) / "side-effect"
         helper = Path(self.directory.name) / "helper's $(touch side-effect); script.sh"
