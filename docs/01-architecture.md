@@ -18,7 +18,9 @@ Managed Claude Code -> Entra user token -> APIM /claude -> your Foundry /anthrop
 2. APIM validates tenant, audience, `oid`, `tid`, and the app-role authorization (or the optional Desktop preview's exact delegated scope).
 3. APIM applies per-user RPM, messages-only TPM, per-user concurrency, and aggregate concurrency. Concurrency counters are gateway-local and approximate; configured aggregate admission must remain below 2,048.
 4. APIM strips caller credentials, obtains a managed-identity token, and calls Foundry under `Foundry User`.
-5. APIM allows only the three configured deployment names in existing mode, or one deployment mapped to all three roles in greenfield mode, and forwards native Messages/count-token routes. SSE responses are unbuffered; inference POSTs are never replayed.
+5. Inference model validation is **backend-owned**. Existing-mode role pins and greenfield's one deployment mapped to all three roles are configuration, **not an authorization boundary**. APIM forwards native Messages/count-token routes. SSE responses are unbuffered; inference POSTs are never replayed.
+
+After the dynamic policy is deployed, Foundry account deployment administrators control automatic publication of eligible deployments on fresh inventory reads. See the [runtime inventory and authorization boundary](model-discovery.md#runtime-inventory-and-authorization-boundary). The separately owned live pilot remains static.
 
 The backend breaker opens after 50 backend 5xx responses in one minute. It does not trip on 429 and does not retry requests. A secondary Foundry target is optional but must expose the same three deployment names.
 

@@ -9,7 +9,8 @@ The policy below is the repository design, **not** the [strict live pilot policy
 - APIM validates tenant, audience, `oid`, `tid`, and the configured app role. The optional Desktop preview can instead use its configured client ID and exact delegated scope.
 - APIM deletes caller `Authorization`, API-key, subscription-key, and legacy credential query values before requesting Foundry with its managed identity.
 - APIM receives `Foundry User` on your Foundry account. Before rollout, separately assess direct Foundry local authentication and existing direct inference RBAC.
-- Existing mode allowlists three configured deployment names; greenfield maps one managed deployment to all three Claude roles. Do not put shared provider credentials or direct Foundry settings on client devices.
+- Inference model validation is **backend-owned**. Configured role pins are **not an authorization boundary**; greenfield still maps one managed deployment to all three Claude roles. Do not put shared provider credentials or direct Foundry settings on client devices.
+- After the dynamic policy is deployed, Foundry account deployment administrators control automatic publication of eligible deployments on fresh inventory reads. See the [runtime inventory and authorization boundary](model-discovery.md#runtime-inventory-and-authorization-boundary). The separately owned live pilot remains static.
 
 ## Diagnostics and clients
 

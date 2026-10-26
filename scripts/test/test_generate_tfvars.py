@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import copy
+import base64
 from hashlib import sha256
 import json
 import os
@@ -31,6 +32,39 @@ ENV = {
     "APIM_DEFAULT_CAPACITY": "2", "PER_USER_CONCURRENT_STREAM_LIMIT": "20", "AGGREGATE_CONCURRENT_STREAM_LIMIT": "40",
 }
 CATALOG_ENV = dict(ENV, **{f"ANTHROPIC_DEFAULT_{role}_MODEL": f"claude-{role.lower()}-pinned" for role in ("OPUS", "SONNET", "HAIKU")})
+
+
+def write_policy_module(directory):
+    """Provider-free evaluation of real locals/templates, with only resource outputs stubbed."""
+    (directory / "variables.tf").write_text((ROOT / "infra/tofu/variables.tf").read_text())
+    main = (ROOT / "infra/tofu/main.tf").read_text()
+    bindings = "\n".join(line for line in main.splitlines() if re.match(
+        r"  (greenfield|effective_foundry_base_url|effective_foundry_resource_id|secondary_foundry_base_url|secondary_foundry_resource_id)\s*=", line))
+    bindings = bindings.replace("azapi_resource.greenfield_foundry[0]", "local.test_foundry")
+    locals_source = main[main.index("  apim_instances = merge({"):main.index("  operations = {")]
+    template = re.search(r'xml_content\s*=\s*(templatefile\(.*?\n  \}\))', main, re.S).group(1)
+    template = template.replace("${path.module}", str(ROOT / "infra/tofu"))
+    template = template.replace("each.value.foundry_resource_id", "instance.foundry_resource_id")
+    (directory / "main.tf").write_text('''locals {
+  test_foundry = {
+    name = var.foundry_account_name
+    id = "/subscriptions/${var.foundry_subscription_id}/resourceGroups/${var.resource_group_name}/providers/Microsoft.CognitiveServices/accounts/${var.foundry_account_name}"
+  }
+''' + bindings + "\n" + locals_source + "\n  rendered_policies = { for key, instance in local.apim_instances : key => " + template + " }\n}\n")
+
+
+def evaluate_policy_module(directory, inputs):
+    path = directory / "inputs.tfvars.json"
+    path.write_text(json.dumps(inputs))
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(directory), "TMPDIR": str(directory),
+           "CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+    return subprocess.run(["tofu", "console", "-no-color", f"-var-file={path}"], cwd=directory, env=env,
+                          input="jsonencode(local.rendered_policies)\n", capture_output=True, text=True, timeout=30)
+
+
+def inventory_configuration(policy):
+    node = ET.fromstring(policy).find(".//set-variable[@name='inventoryConfiguration']")
+    return json.loads(base64.b64decode(node.get("value")))
 
 
 class GenerateTfvarsTests(unittest.TestCase):
@@ -245,26 +279,17 @@ class GenerateTfvarsTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("tofu"), "OpenTofu is required for offline HCL evaluation")
 class ModelCatalogTofuTests(unittest.TestCase):
-    """Evaluate the real variable rules/projection/template without any backend or providers."""
+    """Evaluate the real variable rules and per-instance template without backend/providers."""
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
-        (self.directory / "variables.tf").write_text((ROOT / "infra/tofu/variables.tf").read_text())
-        main = (ROOT / "infra/tofu/main.tf").read_text()
-        locals_source = main[main.index("  named_values = {"):main.index("  operations = {")]
-        template = re.search(r'xml_content\s*=\s*(templatefile\(.*?\n  \}\))', main, re.S).group(1)
-        template = template.replace("${path.module}", str(ROOT / "infra/tofu"))
-        (self.directory / "main.tf").write_text('locals {\n  greenfield = var.deployment_mode == "greenfield"\n' + locals_source + "\n  rendered_policy = " + template + "\n}\n")
+        write_policy_module(self.directory)
         with patch.dict(os.environ, CATALOG_ENV, clear=True):
             self.inputs = generate_tfvars.values()
 
     def evaluate(self, inputs):
-        path = self.directory / "inputs.tfvars.json"
-        path.write_text(json.dumps(inputs))
-        return subprocess.run(["tofu", "console", "-no-color", f"-var-file={path}"], cwd=self.directory,
-                              input="jsonencode({public=local.public_model_catalog, policy=local.rendered_policy})\n",
-                              capture_output=True, text=True, timeout=30)
+        return evaluate_policy_module(self.directory, inputs)
 
     def result(self, inputs):
         result = self.evaluate(inputs)
@@ -273,50 +298,90 @@ class ModelCatalogTofuTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         return json.loads(json.loads(result.stdout))
 
-    def test_rendered_catalog_is_one_safe_public_projection(self):
+    def test_reviewed_catalog_does_not_drive_runtime_inventory(self):
         result = self.result(dict(self.inputs, model_catalog=CATALOG))
-        models = {model["id"]: model for model in CATALOG["models"]}
-        expected_ids = ["claude-opus-pinned", "claude-sonnet-pinned", "claude-haiku-pinned", "claude-orbit-fast"]
-        expected = {"data": [{key: models[identifier][key] for key in ("id", "display_name", "description")} for identifier in expected_ids]}
-        self.assertEqual(result["public"], expected)
-        root = ET.fromstring(result["policy"])
+        self.assertEqual(result, self.result(self.inputs))
+        config = inventory_configuration(result["primary"])
+        self.assertEqual(config, {"account_resource_id": self.inputs["foundry_resource_id"],
+                                  "pins": {role: self.inputs[f"{role}_deployment_name"] for role in ("opus", "sonnet", "haiku")}})
+        root = ET.fromstring(result["primary"])
         self.assertIsNone(root.find("inbound/set-variable[@name='modelCatalog']"))
         self.assertIsNone(root.find("inbound/set-variable[@name='requestedModel']"))
         models_when = next(node for node in root.findall("inbound/choose/when")
                            if node.get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
-        self.assertEqual([node.tag for node in models_when], ["rate-limit-by-key"])
-        self.assertNotIn("${model_catalog_base64}", result["policy"])
-        self.assertNotIn("{{not-a-named-value}}", result["policy"])
-        self.assertNotIn("${not_a_template}", result["policy"])
-        self.assertNotIn("FutureHostingSKU", result["policy"])
-        self.assertNotIn("JObject.Parse((string)context.Variables[\"modelCatalog\"])", result["policy"])
+        self.assertEqual(len(models_when.findall(".//send-request")), 3)
+        self.assertEqual(len(models_when.findall(".//cache-lookup-value")), 1)
+        self.assertEqual(len(models_when.findall(".//cache-store-value")), 1)
+        for forbidden in ("${", "{{not-a-named-value}}", "FutureHostingSKU", "claude-orbit-fast"):
+            self.assertNotIn(forbidden, result["primary"])
+        main = (ROOT / "infra/tofu/main.tf").read_text()
+        for dead in ("gateway_model_ids", "gateway_model_metadata", "public_model_catalog", "model_catalog_base64"):
+            self.assertNotIn(dead, main)
 
-    def test_public_order_prioritizes_role_pins_over_older_models_and_deduplicates(self):
-        catalog = copy.deepcopy(CATALOG)
-        for role in ("sonnet", "haiku"):
-            model = next(model for model in catalog["models"] if model["id"] == f"claude-{role}-pinned")
-            catalog["models"].append({**model, "id": f"claude-{role}-aaa-older"})
-        catalog["models"][1:] = sorted(catalog["models"][1:], key=lambda model: model["id"])
-        expected = ["claude-opus-pinned", "claude-sonnet-pinned", "claude-haiku-pinned",
-                    "claude-haiku-aaa-older", "claude-orbit-fast", "claude-sonnet-aaa-older"]
-        result = self.result(dict(self.inputs, model_catalog=catalog))
-        self.assertEqual([model["id"] for model in result["public"]["data"]], expected)
-        shared = dict(self.inputs, model_catalog=catalog,
-                      **{f"{role}_deployment_name": "claude-opus-pinned" for role in ("opus", "sonnet", "haiku")})
-        result = self.result(shared)
-        self.assertEqual([model["id"] for model in result["public"]["data"]],
-                         ["claude-opus-pinned", "claude-haiku-aaa-older", "claude-haiku-pinned",
-                          "claude-orbit-fast", "claude-sonnet-aaa-older", "claude-sonnet-pinned"])
+    def test_primary_secondary_and_greenfield_bind_the_actual_instance(self):
+        secondary = self.inputs["foundry_resource_id"].replace("/accounts/foundry", "/accounts/secondary")
+        result = self.result(dict(self.inputs, deploy_secondary=True, secondary_foundry_resource_id=secondary))
+        self.assertEqual(inventory_configuration(result["primary"])["account_resource_id"], self.inputs["foundry_resource_id"])
+        self.assertEqual(inventory_configuration(result["secondary"])["account_resource_id"], secondary)
+        shared = self.result(dict(self.inputs, deploy_secondary=True))
+        self.assertEqual(shared["primary"], shared["secondary"])
+        greenfield = dict(self.inputs, deployment_mode="greenfield", claude_model_deployment_name="claude-one",
+                          foundry_account_name="greenfield", foundry_subscription_id="33333333-3333-3333-3333-333333333333")
+        config = inventory_configuration(self.result(greenfield)["primary"])
+        self.assertEqual(config["pins"], dict.fromkeys(("opus", "sonnet", "haiku"), "claude-one"))
+        self.assertEqual(config["account_resource_id"], "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/gateway-rg/providers/Microsoft.CognitiveServices/accounts/greenfield")
 
-    def test_legacy_null_and_greenfield_projection_deduplicate_pins(self):
-        for catalog in ({}, {"model_catalog": None}):
-            result = self.result(dict(self.inputs, **catalog))
-            self.assertEqual([row["id"] for row in result["public"]["data"]],
-                             [self.inputs[f"{role}_deployment_name"] for role in ("opus", "sonnet", "haiku")])
-        shared = dict(self.inputs, **{f"{role}_deployment_name": "shared" for role in ("opus", "sonnet", "haiku")})
-        self.assertEqual([row["id"] for row in self.result(shared)["public"]["data"]], ["shared"])
-        greenfield = dict(self.inputs, deployment_mode="greenfield", claude_model_deployment_name="claude-one")
-        self.assertEqual([row["id"] for row in self.result(greenfield)["public"]["data"]], ["claude-one"])
+    def test_configuration_is_data_not_csharp_xml_or_named_value_injection(self):
+        malicious = 'claude-\"<&{{not-a-named-value}}${not_a_template}\\\n'
+        rejected = self.evaluate(dict(self.inputs, opus_deployment_name=malicious))
+        self.assertIn("Error:", rejected.stderr)
+        self.assertIn("opus_deployment_name", rejected.stderr)
+        result = self.result(dict(self.inputs, model_catalog=CATALOG))
+        pins = {role: self.inputs[f"{role}_deployment_name"] for role in ("opus", "sonnet", "haiku")}
+        self.assertEqual(inventory_configuration(result["primary"])["pins"], pins)
+        for pin in pins.values():
+            self.assertNotIn(pin, result["primary"])
+        self.assertNotIn(malicious, result["primary"])
+        self.assertNotIn("{{not-a-named-value}}", result["primary"])
+        self.assertNotIn("${not_a_template}", result["primary"])
+
+    def test_all_four_deployment_pins_reject_invalid_syntax_before_policy_use(self):
+        for variable in ("opus_deployment_name", "sonnet_deployment_name", "haiku_deployment_name", "claude_model_deployment_name"):
+            inputs = dict(self.inputs)
+            if variable == "claude_model_deployment_name":
+                inputs.update(deployment_mode="greenfield", foundry_account_name="greenfield")
+            for bad in ("claude/bad", "claude bad", 'claude-"bad', "claude\n", "_claude", "-claude", ".claude", "claude-é"):
+                with self.subTest(variable=variable, value=bad):
+                    result = self.evaluate(dict(inputs, **{variable: bad}))
+                    self.assertIn("Error:", result.stderr)
+                    self.assertIn(variable, result.stderr)
+
+    def test_valid_pins_and_inactive_mode_empty_values_are_preserved(self):
+        roles = ("opus", "sonnet", "haiku")
+        for valid in ("A", "1Deployment_A.v2-prod", "claude-" + "x" * 80):
+            with self.subTest(value=valid):
+                existing = dict(self.inputs, claude_model_deployment_name="",
+                                **{f"{role}_deployment_name": valid for role in roles})
+                config = inventory_configuration(self.result(existing)["primary"])
+                self.assertEqual(config["pins"], dict.fromkeys(roles, valid))
+                greenfield = dict(self.inputs, deployment_mode="greenfield", foundry_account_name="greenfield",
+                                  claude_model_deployment_name=valid, **{f"{role}_deployment_name": "" for role in roles})
+                config = inventory_configuration(self.result(greenfield)["primary"])
+                self.assertEqual(config["pins"], dict.fromkeys(roles, valid))
+
+    def test_both_account_ids_reject_url_injection_and_preserve_valid_resource_names(self):
+        account = self.inputs["foundry_resource_id"]
+        for variable in ("foundry_resource_id", "secondary_foundry_resource_id"):
+            for bad in (account + "?x=y", account + "#fragment", account + "/../other", account + "%2fother",
+                        account + "\\other", account + "\n", account.replace("/foundry-rg/", "/../"),
+                        account.replace("/foundry-rg/", "/a%252fb/"), account.replace("/foundry-rg/", "/a b/"),
+                        account.replace("22222222-2222-2222-2222-222222222222", "-" * 36)):
+                with self.subTest(variable=variable, value=bad):
+                    result = self.evaluate(dict(self.inputs, **{variable: bad}))
+                    self.assertIn("Error:", result.stderr)
+                    self.assertIn(variable, result.stderr)
+            valid = account.replace("/foundry-rg/", "/Grüppe_(東).test/").replace("/accounts/foundry", "/accounts/Legacy_Account.v1")
+            self.result(dict(self.inputs, **{variable: valid}))
 
     def test_direct_tfvars_reject_schema_duplicate_binding_default_and_role_errors(self):
         mutations = [

@@ -29,6 +29,59 @@ def assert_token_limit_attributes(root):
 
 
 class GatewayPolicyTests(unittest.TestCase):
+    def test_models_get_returns_inventory_without_falling_through_to_inference(self):
+        root = ET.parse(ROOT / "apim/policies/claude-base.xml").getroot()
+        models = next(node for node in root.findall("inbound/choose/when")
+                      if node.get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
+        response = models.find("return-response")
+        self.assertIsNotNone(response, "Foundry's Anthropic inference endpoint does not implement GET /v1/models")
+        self.assertEqual(response.find("set-status").get("code"), "200")
+        self.assertIsNotNone(models.find("cache-lookup-value"))
+        page = ET.parse(ROOT / "apim/policies/claude-models-page.xml").getroot()
+        request = page.find("when/send-request")
+        self.assertEqual(request.get("mode"), "new")
+        self.assertEqual(request.findtext("set-method"), "GET")
+        self.assertEqual(request.find("authentication-managed-identity").get("resource"), "https://management.azure.com/")
+
+    def test_disabling_collection_preserves_the_reviewed_baseline(self):
+        for name in ("docs/operations-runbook.md", "docs/model-discovery.md", "docs/github-configuration.md"):
+            with self.subTest(path=name):
+                text = (ROOT / name).read_text()
+                shutdown = next((line for line in text.splitlines() if line.startswith("To disable")), "")
+                self.assertIn("MODEL_DISCOVERY_ENABLED", shutdown)
+                self.assertIn("repository-level", shutdown)
+                self.assertIn("explicitly to `false`", shutdown)
+                self.assertIn("Deleting or unsetting", shutdown)
+                self.assertIn("inherits any organization value", shutdown)
+                self.assertIn("only if", shutdown)
+                self.assertIn("not `true`", shutdown)
+                self.assertIn("MODEL_CATALOG_FILE", shutdown)
+                self.assertIn("preserve", shutdown.lower())
+                self.assertNotIn("or leave it unset", shutdown)
+                self.assertNotIn("unset `MODEL_CATALOG_FILE`", shutdown)
+
+    def test_model_authorization_boundary_documentation(self):
+        for name in ("docs/security.md", "docs/01-architecture.md", "docs/02-platform-constraints.md"):
+            with self.subTest(path=name):
+                text = (ROOT / name).read_text().lower()
+                self.assertIn("backend-owned", text)
+                self.assertIn("role pins", text)
+                self.assertIn("not an authorization boundary", text)
+                self.assertIn("after the dynamic policy is deployed", text)
+                self.assertIn("account deployment administrators", text)
+                self.assertIn("automatic publication", text)
+                self.assertIn("live pilot remains static", text)
+                self.assertIn("model-discovery.md#runtime-inventory-and-authorization-boundary", text)
+                self.assertNotIn("allowlists three configured deployment names", text)
+                self.assertNotIn("allows only the three configured deployment names", text)
+
+    def test_live_pilot_is_not_claimed_to_have_this_dynamic_source(self):
+        readme = (ROOT / "README.md").read_text()
+        pilot = readme.split("### Live pilot status", 1)[1].split("## Validate", 1)[0]
+        self.assertIn("static reviewed snapshot", pilot)
+        self.assertIn("PR6 has not changed it", pilot)
+        self.assertIn("These PR6 source changes have not been deployed", readme)
+
     def test_token_limit_attribute_typo_rejected_in_every_branch(self):
         for path in (ROOT / "apim/policies").glob("*.xml"):
             root = ET.fromstring(path.read_text())
@@ -173,6 +226,7 @@ class GatewayPolicyTests(unittest.TestCase):
         api = tofu.split('resource "azurerm_api_management_api_policy" "claude"', 1)[1].split('resource ', 1)[0]
         assert 'azurerm_api_management_backend.foundry' in api
         assert 'azurerm_api_management_named_value.gateway' in api
+        assert 'azurerm_role_assignment.foundry_user' in api
         operation = tofu.split('resource "azurerm_api_management_api_operation_policy" "claude"', 1)[1].split('resource ', 1)[0]
         assert 'depends_on          = [azurerm_api_management_api_policy.claude]' in operation
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
@@ -219,7 +273,7 @@ class GatewayPolicyTests(unittest.TestCase):
         assert workflow.count('scripts/foundry_preflight.py') >= 3
         assert 'os.walk(".", followlinks=False)' in (ROOT / "scripts/test/validate.sh").read_text()
 
-    def test_models_get_inherits_authorization_and_forwards_to_foundry(self):
+    def test_models_get_inherits_authorization_and_returns_before_inference(self):
         root = ET.parse(ROOT / "apim/policies/claude-base.xml").getroot()
         inbound = root.find("inbound")
         children = list(inbound)
@@ -231,14 +285,29 @@ class GatewayPolicyTests(unittest.TestCase):
                  inbound.find("set-backend-service"), inbound.find("authentication-managed-identity")]
         self.assertEqual([children.index(node) for node in order], sorted(children.index(node) for node in order))
         when = branch.find("when")
-        self.assertEqual([node.tag for node in when], ["rate-limit-by-key"])
+        self.assertEqual(list(when)[0].tag, "rate-limit-by-key")
+        self.assertEqual(list(when)[-1].tag, "return-response")
         limit = when.find("rate-limit-by-key")
         self.assertEqual(limit.get("counter-key"), '@("claude-foundry:models:rpm:" + (string)context.Variables["callerKey"])')
         self.assertEqual(limit.get("calls"), "{{per-user-rate-limit}}")
         self.assertEqual(limit.get("renewal-period"), "60")
         self.assertNotIn("Request.Body", ET.tostring(branch, encoding="unicode"))
-        for statement in ("llm-token-limit", "limit-concurrency", "authentication-managed-identity", "send-request", "return-response"):
+        for statement in ("llm-token-limit", "limit-concurrency", "set-backend-service"):
             self.assertIsNone(branch.find(f".//{statement}"))
+        self.assertEqual(when.find("cache-lookup-value").get("caching-type"), "internal")
+        miss = when.find("choose/when")
+        self.assertIn('!context.Variables.ContainsKey("inventoryResult")', miss.get("condition"))
+        admission = miss.find("rate-limit-by-key")
+        self.assertEqual((admission.get("calls"), admission.get("renewal-period")), ("10", "10"))
+        store = miss.find("cache-store-value")
+        self.assertEqual((store.get("caching-type"), store.get("duration")), ("internal", "30"))
+        self.assertEqual(len(root.findall(".//cache-lookup-value")), 1)
+        self.assertEqual(len(root.findall(".//cache-store-value")), 1)
+        self.assertIn("${inventory_pages}", ET.tostring(miss, encoding="unicode"))
+        error = root.find("on-error/choose/when")
+        self.assertIn('context.Variables.ContainsKey("inventoryActive")', error.get("condition"))
+        self.assertEqual(error.find("return-response/set-status").get("code"), "503")
+        self.assertEqual([node.tag for node in root.find("on-error")], ["choose", "base"])
         models = ET.parse(ROOT / "apim/policies/claude-models.xml").getroot()
         for section in ("inbound", "backend", "outbound", "on-error"):
             self.assertEqual([node.tag for node in models.find(section)], ["base"])

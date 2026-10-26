@@ -21,7 +21,7 @@ Configure this inventory in the GitHub environment selected by the workflow. Cre
 | `AZURE_LOCATION`, `APIM_NAME`, `APIM_PUBLISHER_EMAIL`, `APIM_PUBLISHER_NAME` | Primary APIM identity and location. |
 | `ENTRA_TENANT_ID`, `APIM_EXPECTED_AUDIENCE`, `APIM_REQUIRED_APP_ROLE` | Caller-token validation. Both smoke workflows export `APIM_TENANT_ID` from `vars.ENTRA_TENANT_ID`, not from the infrastructure login tenant, and `APIM_AUDIENCE` from `APIM_EXPECTED_AUDIENCE`. |
 | `FOUNDRY_BASE_URL`, `FOUNDRY_SUBSCRIPTION_ID`, `FOUNDRY_RESOURCE_GROUP`, `FOUNDRY_ACCOUNT_NAME` | Existing Foundry target. The URL is `https://<account>.services.ai.azure.com/anthropic`. Greenfield reuses only `FOUNDRY_ACCOUNT_NAME` and derives the rest in the target subscription. |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Three existing, allowlisted deployment names. |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Three configured deployment-name role pins, not a runtime inventory/inference allowlist. Missing pins are not fabricated in discovery. |
 | `PER_USER_RATE_LIMIT`, `PER_USER_TOKEN_LIMIT`, `PER_USER_CONCURRENT_STREAM_LIMIT`, `AGGREGATE_CONCURRENT_STREAM_LIMIT` | Measured controls; require concurrency `per-user < aggregate < 2048`. Shared RPM applies to both inference operations; TPM applies to messages only. Controls are gateway-local and approximate. |
 | `APIM_SKU`, `APIM_ZONE_REDUNDANT`, `APIM_DEFAULT_CAPACITY` | `StandardV2`, `false`, and a measured fixed capacity for the public baseline. |
 | `TOFU_STATE_SUBSCRIPTION_ID`, `TOFU_STATE_RG`, `TOFU_STATE_STORAGE_ACCOUNT`, `TOFU_STATE_CONTAINER`, `TOFU_STATE_KEY` | Existing Azure Blob backend coordinates. |
@@ -34,12 +34,19 @@ For greenfield also configure `FOUNDRY_PROJECT_NAME`, `FOUNDRY_LOCATION`, `CLAUD
 | --- | --- |
 | `PER_USER_MONTHLY_TOKEN_QUOTA` | Optional integer 0..9223372036854775807; unset/blank/0 disables it. No positive default. Keep disabled until live policy validation. See [quota semantics](security.md#optional-monthly-token-quota). |
 | `DEPLOY_SECONDARY` | Defaults to `false`. When `true`, require `AZURE_SECONDARY_LOCATION` and `APIM_SECONDARY_NAME`. A blank secondary Foundry URL uses the primary target. |
-| `SECONDARY_FOUNDRY_BASE_URL`, `SECONDARY_FOUNDRY_SUBSCRIPTION_ID`, `SECONDARY_FOUNDRY_RESOURCE_GROUP`, `SECONDARY_FOUNDRY_ACCOUNT_NAME` | Provide all four to use a secondary Foundry target; its deployment names must match the primary names. |
+| `SECONDARY_FOUNDRY_BASE_URL`, `SECONDARY_FOUNDRY_SUBSCRIPTION_ID`, `SECONDARY_FOUNDRY_RESOURCE_GROUP`, `SECONDARY_FOUNDRY_ACCOUNT_NAME` | Provide all four to use a secondary Foundry target. Inventory binds to that account, not the primary; verify the intended role-pin deployments on both accounts before failover. |
 | `APIM_NETWORKING_PROFILE` | Defaults to `public`. Set `private` only with `PremiumV2` and `APIM_SUBNET_RESOURCE_ID`; also supply `APIM_SECONDARY_SUBNET_RESOURCE_ID` when deploying secondary. |
 | `LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`, `APPLICATION_INSIGHTS_RESOURCE_ID` | Supply both to reuse external telemetry, or neither for repository-created telemetry. External Application Insights must have local auth disabled. |
 | `ACTION_GROUP_RESOURCE_ID` | Existing incident destination; optional in configuration, required before rollout. |
 | `TRAFFIC_MANAGER_ENABLED`, `TRAFFIC_MANAGER_NAME` | Defaults to `false`; only effective for public secondary topology. Name is optional and otherwise derives from the primary APIM name. |
 | `CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED` | Defaults to `false`. When `true`, also require `CLAUDE_DESKTOP_CLIENT_ID` and `CLAUDE_DESKTOP_DELEGATED_SCOPE` (short `scp` claim value). Desktop remains preview-only. |
+| `MODEL_CATALOG_FILE` | Optional repository-relative path to a committed reviewed governance catalog. Deployment freezes its contents/hash for review; it does not populate runtime inventory or limit inference. Preserve the file and collector baseline path when disabling collection. |
+
+The separate `sync-models.yml` collector runs only when `vars.MODEL_DISCOVERY_ENABLED == 'true'`. This effective value can come from the repository or, if unset there, the organization.
+
+To disable future collector jobs, set the **repository-level** `MODEL_DISCOVERY_ENABLED` variable explicitly to `false`; preserve the previous `MODEL_CATALOG_FILE` path **and its reviewed baseline file**. Deleting or unsetting the repository variable inherits any organization value; collection is disabled then only if that inherited value is not `true`. Removing `MODEL_CATALOG_FILE` is not an off switch: that path is the collector's previously reviewed baseline and, separately, an optional deployment input. Keep the dedicated read-only identity and protected `model-discovery` environment distinct from the deployment writer; see [discovery configuration and release gates](model-discovery.md).
+
+Runtime discovery uses the existing account-scoped Foundry User assignment for each APIM identity (`53ca6127-db72-4b80-b1b0-d745d6d5456d`, which includes deployments/read) and public-Azure ARM HTTPS egress. No new role is introduced. Verify the actual assignments, propagation, account/backend binding, egress and cold/warm client deadlines before deploying; these source changes are not live-pilot adoption.
 
 ## OIDC, state, and review responsibilities
 

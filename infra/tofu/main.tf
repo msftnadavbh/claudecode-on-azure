@@ -60,18 +60,6 @@ locals {
     "haiku-model"                           = local.greenfield ? var.claude_model_deployment_name : var.haiku_deployment_name
   }
 
-  gateway_model_ids = distinct(concat([
-    local.named_values["opus-model"], local.named_values["sonnet-model"], local.named_values["haiku-model"]
-  ], var.model_catalog == null ? [] : sort([for model in var.model_catalog.models : model.id])))
-  gateway_model_metadata = var.model_catalog == null ? {} : { for model in var.model_catalog.models : model.id => model }
-  public_model_catalog = {
-    data = [for id in local.gateway_model_ids : {
-      id           = id
-      display_name = var.model_catalog == null ? id : local.gateway_model_metadata[id].display_name
-      description  = var.model_catalog == null ? "Configured gateway deployment" : local.gateway_model_metadata[id].description
-    }]
-  }
-
   operations = {
     messages = {
       display_name = "Create message"
@@ -86,7 +74,7 @@ locals {
       policy_path  = "${path.module}/../../apim/policies/claude-count-tokens.xml"
     }
     models = {
-      display_name = "List approved models"
+      display_name = "List deployed Anthropic models"
       method       = "GET"
       url_template = "/v1/models"
       policy_path  = "${path.module}/../../apim/policies/claude-models.xml"
@@ -328,12 +316,21 @@ resource "azurerm_api_management_api_policy" "claude" {
   api_management_name = each.value.name
   resource_group_name = local.effective_resource_group_name
   xml_content = templatefile("${path.module}/../../apim/policies/claude-base.xml", {
-    model_catalog_base64 = base64encode(jsonencode(local.public_model_catalog))
+    inventory_config_base64 = base64encode(jsonencode({
+      account_resource_id = each.value.foundry_resource_id
+      pins = {
+        opus   = local.named_values["opus-model"]
+        sonnet = local.named_values["sonnet-model"]
+        haiku  = local.named_values["haiku-model"]
+      }
+    }))
+    inventory_pages = join("\n", [for page in range(3) : file("${path.module}/../../apim/policies/claude-models-page.xml")])
   })
 
   depends_on = [
     azurerm_api_management_backend.foundry,
     azurerm_api_management_named_value.gateway,
+    azurerm_role_assignment.foundry_user,
   ]
 }
 

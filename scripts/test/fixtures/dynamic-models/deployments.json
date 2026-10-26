@@ -1,0 +1,18 @@
+{
+  "value": [
+    {
+      "id": "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/foundry/deployments/claude-opus-pinned",
+      "name": "claude-opus-pinned",
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "sku": { "name": "GlobalStandard", "capacity": 1 },
+      "properties": {
+        "model": { "format": "Anthropic", "name": "claude-opus-5-5", "version": "1" },
+        "provisioningState": "Succeeded",
+        "versionUpgradeOption": "NoAutoUpgrade",
+        "capabilities": { "synthetic-private-capability": "not-public" }
+      },
+      "tags": { "private-tag": "not-public" }
+    }
+  ],
+  "nextLink": null
+}
