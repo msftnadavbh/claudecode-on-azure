@@ -1,0 +1,8 @@
+subscription_id     = "REPLACE_WITH_SUBSCRIPTION_UUID"
+resource_group_name = "rg-claude-gateway-poc"
+location            = "REPLACE_WITH_SUBNET_REGION"
+subnet_id           = "REPLACE_WITH_EXISTING_SUBNET_RESOURCE_ID"
+foundry_resource_id = "REPLACE_WITH_EXISTING_FOUNDRY_ACCOUNT_RESOURCE_ID"
+ssh_public_key      = "REPLACE_WITH_OPERATOR_SSH_PUBLIC_KEY"
+client_cidrs        = ["10.20.30.0/24"]
+management_cidrs    = ["10.20.40.5/32"]

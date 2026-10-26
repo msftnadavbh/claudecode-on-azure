@@ -1,0 +1,15 @@
+.terraform/
+*.tfstate*
+*.tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+__pycache__/
+.work/
+artifacts/
+secrets/
+settings.json
+gateway.yaml
+*.pem
+*.key
+*.crt
