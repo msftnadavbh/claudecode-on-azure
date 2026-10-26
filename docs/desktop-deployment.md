@@ -2,6 +2,8 @@
 
 Desktop is an optional preview. For a **local Gateway-mode `helper-script` pilot**, an [existing Windows Desktop configuration](windows-desktop-pilot.md) successfully used a native Entra helper and Chat without registry policy or a new OIDC client. That path still needs an authorized gateway token, installed helper and Azure CLI session; it did not test Code-tab tools, Cowork, refresh or revocation. The alternative managed **browser-OIDC** profile below requires a Desktop enterprise app, public-client registration with redirect URI `http://127.0.0.1/callback`, delegated consent, pilot devices, and endpoint management. This repository does not install Desktop, create its Entra registration, or apply registry/profile changes; generated OIDC files were not applied in the local pilot.
 
+**Support versus verification:** Windows registry and macOS `.mobileconfig` generators are available. The [26 October dynamic discovery check](windows-desktop-pilot.md#2026-10-26-dynamic-discovery--api-and-picker-verified) verified a four-model picker with **Opus 5.5 selected** on Windows Desktop **3.6556.2.0**, using the actual **local Gateway/helper-script profile**, not generated MDM/OIDC. It sent no inference. Actual macOS device/native-auth/picker behavior is untested. This repository provides/validates no Linux Desktop installer or configuration; use the [Terminal integration](claude-code-managed-settings.md) there. See the [coverage table](../README.md#repository-integration-coverage-versus-live-discovery-verification).
+
 ```bash
 python3 scripts/desktop/generate_managed_config.py \
   --gateway-url https://gateway.example/claude \
@@ -13,6 +15,8 @@ python3 scripts/desktop/generate_managed_config.py \
   --sonnet-model sonnet-deployment --opus-model opus-deployment --haiku-model haiku-deployment \
   --output-dir out/desktop
 ```
+
+For owner-approved **automatic discovery**, first back up and review existing client policy, then append `--enable-model-discovery` to this generation command. It keeps the existing string `modelDiscoveryEnabled="true"` contract and omits `inferenceModels`; Windows output also removes the old value in the selected registry scope. An explicit `inferenceModels` list wins over discovery, including one delivered by higher-precedence policy. Neither file is applied by generation. The actual local pilot's app-normalized boolean `true` is a separate configuration path, not a reason to change this generator or import OIDC policy into that profile. Fully quit Desktop, including background processes, then restart to refresh after approved deployment/configuration; closing a window may leave the app running. Gateway freshness includes a 30-second cache plus ARM propagation and client startup, not open-picker polling. See [discovery and rollout limits](model-discovery.md#client-opt-in-only-after-the-endpoint-is-published).
 
 For the **OIDC branch only**, enable `CLAUDE_DESKTOP_DELEGATED_AUTH_ENABLED=true` with `CLAUDE_DESKTOP_CLIENT_ID` and the short delegated-scope claim value in `CLAUDE_DESKTOP_DELEGATED_SCOPE`. Assign pilot users, grant consent for the exact full scope, and validate the generated profile/registry policy against the pinned Desktop version. Deploy generated files with MDM/GPO, verify its managed configuration report, then test inference, refresh, and revoked access before any expansion. Do not apply the broader repository role-OR-Desktop policy blindly to the strict live CLI-only pilot.
 

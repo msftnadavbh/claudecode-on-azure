@@ -1,8 +1,10 @@
 # Windows Desktop Opus 5.5 pilot — local Gateway mode
 
+**Current discovery status (26 October 2026):** Windows Desktop **3.6556.2.0** freshly discovered four models in the existing local Gateway/helper-script profile; the visible Code-view selector showed **Opus 5.5 selected**, Sonnet 5.5, Haiku 4.5 and Opus 5. See the [current API/picker record](#2026-10-26-dynamic-discovery--api-and-picker-verified). This is not a new Chat inference, Code-tools, Cowork or managed OIDC result. Earlier setup/Chat records below remain historical evidence, not current-build inference proof.
+
 ## Current path: no registry or new consent required
 
-The Windows host has an applied local Gateway configuration in `%LOCALAPPDATA%\Claude-3p\configLibrary\7c3f7918-d444-45f0-8a55-172cb6d8dcaa.json`. It uses `helper-script` and now selects `claude-opus-5-5`. Registry/MDM delivery is optional, not a prerequisite for this single-device test.
+The Windows host uses the applied local Gateway configuration in `%LOCALAPPDATA%\Claude-3p\configLibrary\7c3f7918-d444-45f0-8a55-172cb6d8dcaa.json` with `helper-script`. Registry/MDM delivery is optional, not a prerequisite for this single-device path. **The setup and Chat checks in this section predate the current dynamic discovery record.**
 
 A separate native Windows Entra helper was installed at `%LOCALAPPDATA%\claudecodepoc\desktop-entra-pilot.cmd` with its PowerShell implementation alongside it. Its fixed arguments select the existing pilot tenant/audience and the approved subscription account described below, and it privately obtains a JWT from native Windows Azure CLI. It does not use the old helper's subscription-key path and does not change Azure CLI defaults. Earlier helper and native Desktop Chat checks passed; the latest check's scope is recorded separately below.
 
@@ -38,13 +40,25 @@ The dedicated Desktop public-client app described below was prepared for the alt
 
 ### 2026-10-26 discovery — configured/API-verified
 
-With approval, only two keys in the existing active local profile `%LOCALAPPDATA%\Claude-3p\configLibrary\7c3f7918-d444-45f0-8a55-172cb6d8dcaa.json` changed: `modelDiscoveryEnabled` is the **string** `"true"`, and `inferenceModels` was removed. The helper/authentication, TTL **240**, profile ID, `_meta` and ACLs were unchanged. No registry/MDM or alternative OIDC configuration was applied.
+**SUPERSEDED historical static-catalog stage; anchor and backup identities retained for audit.** See the [later dynamic API/picker record](#2026-10-26-dynamic-discovery--api-and-picker-verified) for current status.
 
-The exact original private backup is adjacent: `7c3f7918-d444-45f0-8a55-172cb6d8dcaa.json.pre-discovery-76944aac-26bc-4106-a2fd-afcf8c11aec0.bak`. Profile SHA-256 before: `e4387a636ab6c7fcb06baa5635d4c9364483e67ed258f184e837df7c54905e9a`; after: `90a0090d16c8ec0621eab27f29614a74f6161be8bddfe526f4aa5958f2c98bb9`.
+With approval, only two keys in the then-active local profile `%LOCALAPPDATA%\Claude-3p\configLibrary\7c3f7918-d444-45f0-8a55-172cb6d8dcaa.json` changed: `modelDiscoveryEnabled` was the **string** `"true"`, and `inferenceModels` was removed. The helper/authentication, TTL **240**, profile ID, `_meta` and ACLs were unchanged. No registry/MDM or alternative OIDC configuration was applied.
 
-The lead's offline check of the actual installed Desktop **2.42304.2.0** parser/raw configuration loader proved string `"true"` plus no `inferenceModels` selects discovery and preserves the default Opus 5.5 pin with the reviewed native fields. The existing installed helper also authorized both live catalog GET forms; [the bounded publication record](model-discovery.md#2026-10-26-bounded-live-pilot--configuredapi-verified) records exact API checks, static catalog, unchanged cloud resources and private audit evidence. This does not auto-refresh Azure inventory or prove other family aliases/refusal fallback.
+The exact original private backup for that stage was recorded alongside the profile: `7c3f7918-d444-45f0-8a55-172cb6d8dcaa.json.pre-discovery-76944aac-26bc-4106-a2fd-afcf8c11aec0.bak`. Profile SHA-256 before: `e4387a636ab6c7fcb06baa5635d4c9364483e67ed258f184e837df7c54905e9a`; after: `90a0090d16c8ec0621eab27f29614a74f6161be8bddfe526f4aa5958f2c98bb9`.
 
-**Desktop was neither launched nor quit during this change and remains closed. The user must open it.** The UI picker, startup inference and end-to-end behavior were not verified; no Messages/count-tokens/inference calls were made. This is one PC configured/API-verified, not fleet enablement or a new Chat success. Recovery must use the matching discovery backup and verified profile/metadata/helper/ACL baseline with Desktop closed and a reviewed plan; user/app drift requires manual review. Retain the adjacent backup privately, not in Git.
+The lead's offline check of the then-installed Desktop **2.42304.2.0** parser/raw configuration loader proved string `"true"` plus no `inferenceModels` selected discovery and preserved the default Opus 5.5 pin with the reviewed native fields. The existing installed helper also authorized both live catalog GET forms; [the historical bounded publication record](model-discovery.md#2026-10-26-bounded-live-pilot--configuredapi-verified) records those API checks and static catalog. That earlier stage did not auto-refresh Azure inventory or prove other family aliases/refusal fallback.
+
+**During that earlier change, Desktop was neither launched nor quit and remained closed.** Its UI picker, startup inference and end-to-end behavior were not verified then; no Messages/count-tokens/inference calls were made. This was one PC configured/API-verified, not fleet enablement or a new Chat success. The later picker observation below supersedes only that unverified picker status. Retain the adjacent backup privately, not in Git, and do not restore it blindly after app/user drift.
+
+### 2026-10-26 dynamic discovery — API and picker verified
+
+The [operation-only publication](model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified) replaced the static response with the bound Foundry account's deployment inventory. The existing helper/authentication and local profile were preserved; no registry/MDM, OIDC or client configuration change was applied. The app had normalized `modelDiscoveryEnabled` to boolean `true`, with no explicit `inferenceModels`; the generator still intentionally emits string `"true"`. Its current profile hash is recorded in the private sanitized evidence, not the historical before/after hashes above.
+
+Closing the window left **eight background processes**. The user gracefully **fully quit Desktop** and the lead confirmed **zero** before relaunch. Build **3.6556.2.0** logged `4 found in 1247ms; picker = 4 (discovery)` at `12:57:13+02:00`. At `13:00:12+02:00`, Windows UI Automation confirmed four visible enabled model controls in the foreground **Code-view model selector**: **Opus 5.5 selected**, Sonnet 5.5, Haiku 4.5 and Opus 5. This is actual picker evidence for the local Gateway/helper-script route, **not** a new Chat inference or a Code-tools workflow test.
+
+No Messages, count-tokens or inference requests were sent. Alias/refusal fallback, long-lived refresh, revocation and Cowork remain untested; this is not fleet enablement. No macOS Desktop or terminal dynamic-discovery check was performed. Historical Chat/Linux inference evidence remains separate. For refresh, fully quit/relaunch Desktop; an already-open picker is not polled, and a timeout can leave cached/fallback entries.
+
+The durable evidence is `/home/nadav/claudecode-prod-audit-20261026-69xv86rc/v3/desktop-verification.sanitized.json`. Recovery requires the current matching profile/metadata/helper/ACL baseline and a reviewed plan with Desktop fully stopped; an old static-profile backup is not permission to overwrite current state. Gateway policy restoration separately requires a fresh ETag, proof of ownership and a reviewed conditional restore of only the owned resource. Full IaC adoption remains pending.
 
 ## Earlier MDM/OIDC preparation (not applied)
 
@@ -82,6 +96,6 @@ The live gateway continues to allow the Azure CLI application identity, which is
 
 ## Rollback
 
-For the active local helper configuration, follow the guarded recovery boundary in the 2026-10-26 entry above; do not blindly restore an older adjacent backup. Fully quit Desktop and verify the matching profile/metadata/helper/ACL baseline and current state before any reviewed restoration. The old helper uses subscription keys and may not work against the current JWT-protected API; restoring its configuration is not service restoration. Preserve APIM's current JWT protection and use the verified standalone CLI if troubleshooting.
+For the active local helper configuration, follow the [current guarded recovery boundary](#2026-10-26-dynamic-discovery--api-and-picker-verified); do not blindly restore an older adjacent backup. Fully quit Desktop and verify the matching profile/metadata/helper/ACL baseline and current state before any reviewed restoration. The old helper uses subscription keys and may not work against the current JWT-protected API; restoring its configuration is not service restoration. Preserve APIM's current JWT protection and use the verified standalone CLI if troubleshooting; historical CLI inference is not proof of automatic discovery.
 
 Sign out before removing configuration. The removal file deletes only generated values; it does not delete the whole policy key, restore overwritten values, or clear token caches. Snapshot any existing policy before import. Remove only the Desktop client ID from APIM if activated; keep the CLI-only JWT policy on the keyless API. Disable/remove only the dedicated Desktop assignment/consent when appropriate.

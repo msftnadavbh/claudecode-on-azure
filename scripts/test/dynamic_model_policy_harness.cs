@@ -66,6 +66,23 @@ class PolicyHarness {
             if (kind == "choose") {
                 var selected = node.Elements().FirstOrDefault(branch => branch.Name == "otherwise" || (bool)Eval(Attr(branch, "condition"), context));
                 if (selected != null && Run(selected.Elements(), context)) { return true; }
+            } else if (kind == "retry") {
+                // Only the fixed inventory continuation loop, never an HTTP-failure retry engine.
+                var page = node.Element("choose");
+                if (node.Attributes().Count() != 4 || Attr(node, "count") != "2" || Attr(node, "interval") != "1" ||
+                    Attr(node, "first-fast-retry") != "true" || node.Elements().Count() != 1 || page == null || page.Element("when") == null ||
+                    Attr(node, "condition") != Attr(page.Element("when"), "condition") ||
+                    context.Operation.Id != "models" || context.Request.Method != "GET") {
+                    throw new HarnessError("Unsupported retry configuration");
+                }
+                if (Run(node.Elements(), context)) { return true; }
+                for (var continuation = 0; continuation < 2 && (bool)Eval(Attr(node, "condition"), context); continuation++) {
+                    if (continuation == 1) {
+                        context.Events.Add("continuation-delay:1");
+                        context.Variables["inventoryStarted"] = ((DateTime)context.Variables["inventoryStarted"]).AddSeconds(-1);
+                    }
+                    if (Run(node.Elements(), context)) { return true; }
+                }
             } else if (kind == "validate-azure-ad-token") {
                 context.Events.Add("authenticate");
                 var auth = (string)context.Input["auth"] ?? "role";

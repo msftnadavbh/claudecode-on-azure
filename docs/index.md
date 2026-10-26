@@ -17,12 +17,13 @@ The active deployment path is OpenTofu only. It creates no custom enterprise gat
 - [Managed Claude Code settings](claude-code-managed-settings.md)
 - [Client canary](claude-code-canary.md)
 - [Desktop preview](desktop-deployment.md)
-- [Shared model discovery (opt-in, repository only)](model-discovery.md)
+- [Shared model discovery (opt-in; support versus live verification)](model-discovery.md)
 
 ## Focused live pilot evidence (not full IaC validation)
 
 - [Opus 5.5 and Linux Claude Code](opus-5-5-pilot.md)
-- [Windows Desktop local Gateway-mode Chat](windows-desktop-pilot.md)
+- [Dynamic gateway discovery and Windows four-model picker — 26 October 2026](model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified)
+- [Windows Desktop current picker and historical local Gateway-mode Chat](windows-desktop-pilot.md#2026-10-26-dynamic-discovery--api-and-picker-verified)
 - [Temporary native monthly quota rehearsal and recovery](live-budget-demo.md)
 
 ## Operate

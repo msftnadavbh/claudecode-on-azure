@@ -164,15 +164,17 @@ class DynamicModelPolicyTests(unittest.TestCase):
         self.assertEqual(self.data(result)[0]["id"], name)
         self.assertTrue(self.data(result)[0]["is_family_default"])
 
-    def test_complete_two_and_three_page_inventories(self):
+    def test_complete_one_two_and_three_page_inventories(self):
         a, b, c = deployment(), deployment("claude-sonnet-pinned", "claude-sonnet-5"), deployment("claude-haiku-pinned", "claude-haiku-5")
-        for pages, expected in (([page([a], link()), page([b])], [a["name"], b["name"]]),
+        for pages, expected in (([page([a])], [a["name"]]),
+                                ([page([a], link()), page([b])], [a["name"], b["name"]]),
                                 ([page([c], link()), page([a], link("page3")), page([b])], [a["name"], b["name"], c["name"]])):
             with self.subTest(pages=len(pages)):
                 result, = self.run_requests({"pages": pages})
                 self.assertEqual([row["id"] for row in self.data(result)], expected)
                 self.assertEqual(len(result["calls"]), len(pages))
                 self.assertEqual(result["stores"], 1)
+                self.assertEqual(result["events"].count("continuation-delay:1"), int(len(pages) == 3))
                 self.assertGreater(result["events"].index("cache-store"), max(i for i, value in enumerate(result["events"]) if value == "ARM"))
 
     def test_opaque_continuation_encoding_is_preserved_without_caller_data(self):
@@ -244,6 +246,24 @@ class DynamicModelPolicyTests(unittest.TestCase):
         self.unavailable(results[1], calls=2)
         self.unavailable(results[2])
         self.assertEqual(self.data(results[3]), [])
+
+    def test_later_http_and_transport_failures_never_retry_or_cache(self):
+        failures = [{"status": 503, "body": "private"}, {"networkError": True}, {"identityError": True}]
+        results = self.run_requests(*({"time": i * 30, "pages": [page([], link()), failure]}
+                                     for i, failure in enumerate(failures)))
+        for result in results:
+            self.unavailable(result, calls=2)
+            self.assertNotIn("continuation-delay:1", result["events"])
+
+    def test_continuation_delay_rechecks_budget_but_two_page_completion_does_not_wait(self):
+        delayed, complete = self.run_requests(
+            {"pages": [page([], link(), elapsedSeconds=2), page([], link("3"), elapsedSeconds=2.2)]},
+            {"time": 30, "pages": [page([], link(), elapsedSeconds=2), page([], elapsedSeconds=2.2)]})
+        self.unavailable(delayed, calls=2)
+        self.assertEqual(delayed["events"].count("continuation-delay:1"), 1)
+        self.assertEqual(self.data(complete), [])
+        self.assertEqual((len(complete["calls"]), complete["stores"]), (2, 1))
+        self.assertNotIn("continuation-delay:1", complete["events"])
 
     def test_elapsed_budget_checked_before_fetch_after_fetch_and_before_cache(self):
         results = self.run_requests(

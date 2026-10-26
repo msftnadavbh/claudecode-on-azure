@@ -70,17 +70,39 @@ class GatewayPolicyTests(unittest.TestCase):
                 self.assertIn("after the dynamic policy is deployed", text)
                 self.assertIn("account deployment administrators", text)
                 self.assertIn("automatic publication", text)
-                self.assertIn("live pilot remains static", text)
+                self.assertIn("operation-only", text)
+                self.assertNotIn("live pilot remains static", text)
+                self.assertIn("model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified", text)
                 self.assertIn("model-discovery.md#runtime-inventory-and-authorization-boundary", text)
                 self.assertNotIn("allowlists three configured deployment names", text)
                 self.assertNotIn("allows only the three configured deployment names", text)
 
-    def test_live_pilot_is_not_claimed_to_have_this_dynamic_source(self):
+    def test_live_discovery_record_is_bounded_not_full_iac_or_fleet_verification(self):
         readme = (ROOT / "README.md").read_text()
         pilot = readme.split("### Live pilot status", 1)[1].split("## Validate", 1)[0]
-        self.assertIn("static reviewed snapshot", pilot)
-        self.assertIn("PR6 has not changed it", pilot)
-        self.assertIn("These PR6 source changes have not been deployed", readme)
+        self.assertIn("operation policy", pilot)
+        self.assertIn("Full OpenTofu adoption remains pending", pilot)
+        self.assertIn("3.6556.2.0", pilot)
+        self.assertIn("No inference was sent", pilot)
+        self.assertNotIn("static reviewed snapshot", pilot)
+        self.assertIn("#2026-10-26-dynamic-discovery--api-and-windows-picker-verified", pilot)
+
+    def test_discovery_platform_coverage_distinguishes_support_from_verification(self):
+        readme = (ROOT / "README.md").read_text()
+        coverage = readme.split("### Repository integration coverage", 1)[1].split("### Live pilot status", 1)[0]
+        rows = [line for line in coverage.splitlines() if line.startswith("|")]
+        terminal = next(row for row in rows if "Claude Code terminal" in row)
+        for platform in ("macOS", "Linux", "WSL", "native Windows"):
+            self.assertIn(platform, terminal)
+        self.assertIn("NOT live-verified on any terminal OS", terminal)
+        windows = next(row for row in rows if "Desktop — Windows" in row)
+        self.assertIn("local Gateway/helper-script", windows)
+        self.assertIn("not MDM/OIDC", windows)
+        self.assertIn("Opus 5.5 selected", windows)
+        self.assertIn("UNTESTED", next(row for row in rows if "Desktop — macOS" in row))
+        self.assertIn("not provided/validated", next(row for row in rows if "Desktop — Linux" in row))
+        self.assertIn("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1", readme)
+        self.assertIn("7.204 seconds", readme)
 
     def test_token_limit_attribute_typo_rejected_in_every_branch(self):
         for path in (ROOT / "apim/policies").glob("*.xml"):
@@ -172,7 +194,11 @@ class GatewayPolicyTests(unittest.TestCase):
         assert aggregate.get("key") == "claude-foundry:aggregate"
         assert aggregate.get("max-count") == "{{aggregate-concurrent-stream-limit}}"
         assert aggregate.find("forward-request").get("buffer-response") == "false"
-        assert "retry" not in "".join(policies.values()).lower()
+        models = next(node for node in root.findall("inbound/choose/when")
+                      if node.get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
+        assert list(root.iter("retry")) == [models.find("choose/when/retry")]
+        for name in ("claude-messages", "claude-count-tokens", "claude-models"):
+            assert not list(ET.fromstring(policies[name]).iter("retry")), "POST/inherited policies must not retry"
         messages = ET.fromstring(policies["claude-messages"]).find("inbound")
         count_tokens = ET.fromstring(policies["claude-count-tokens"]).find("inbound")
         for policy in (messages, count_tokens):
@@ -303,7 +329,14 @@ class GatewayPolicyTests(unittest.TestCase):
         self.assertEqual((store.get("caching-type"), store.get("duration")), ("internal", "30"))
         self.assertEqual(len(root.findall(".//cache-lookup-value")), 1)
         self.assertEqual(len(root.findall(".//cache-store-value")), 1)
-        self.assertIn("${inventory_pages}", ET.tostring(miss, encoding="unicode"))
+        loop = miss.find("retry")
+        page = ET.parse(ROOT / "apim/policies/claude-models-page.xml").getroot()
+        self.assertEqual(loop.attrib, {"condition": page.find("when").get("condition"),
+                                       "count": "2", "interval": "1", "first-fast-retry": "true"})
+        self.assertEqual((loop.text or "").strip(), "${inventory_pages}")
+        self.assertEqual(list(loop), [])
+        self.assertEqual([node.tag for node in miss],
+                         ["rate-limit-by-key", "retry", "set-variable", "cache-store-value"])
         error = root.find("on-error/choose/when")
         self.assertIn('context.Variables.ContainsKey("inventoryActive")', error.get("condition"))
         self.assertEqual(error.find("return-response/set-status").get("code"), "503")

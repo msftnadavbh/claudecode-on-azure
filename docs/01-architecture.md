@@ -20,7 +20,7 @@ Managed Claude Code -> Entra user token -> APIM /claude -> your Foundry /anthrop
 4. APIM strips caller credentials, obtains a managed-identity token, and calls Foundry under `Foundry User`.
 5. Inference model validation is **backend-owned**. Existing-mode role pins and greenfield's one deployment mapped to all three roles are configuration, **not an authorization boundary**. APIM forwards native Messages/count-token routes. SSE responses are unbuffered; inference POSTs are never replayed.
 
-After the dynamic policy is deployed, Foundry account deployment administrators control automatic publication of eligible deployments on fresh inventory reads. See the [runtime inventory and authorization boundary](model-discovery.md#runtime-inventory-and-authorization-boundary). The separately owned live pilot remains static.
+After the dynamic policy is deployed, Foundry account deployment administrators control automatic publication of eligible deployments on fresh inventory reads. See the [runtime inventory and authorization boundary](model-discovery.md#runtime-inventory-and-authorization-boundary). The separately owned live pilot has an [operation-only dynamic publication and Windows picker check](model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified), not full IaC adoption.
 
 The backend breaker opens after 50 backend 5xx responses in one minute. It does not trip on 429 and does not retry requests. A secondary Foundry target is optional but must expose the same three deployment names.
 
