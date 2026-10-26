@@ -1,0 +1,79 @@
+<choose>
+  <when condition="@((string)JObject.Parse((string)context.Variables[&quot;inventoryState&quot;])[&quot;next&quot;] != &quot;&quot; &amp;&amp; DateTime.UtcNow.Subtract((DateTime)context.Variables[&quot;inventoryStarted&quot;]).TotalSeconds &lt; 5)">
+    <!-- The URL was bound and validated before this block; never copy caller credentials, queries, or bodies. -->
+    <send-request mode="new" response-variable-name="inventoryPage" timeout="2" ignore-error="true">
+      <set-url>@((string)JObject.Parse((string)context.Variables["inventoryState"])["next"])</set-url>
+      <set-method>GET</set-method>
+      <set-header name="Accept" exists-action="override"><value>application/json</value></set-header>
+      <authentication-managed-identity resource="https://management.azure.com/" ignore-error="false" />
+    </send-request>
+    <set-variable name="inventoryState" value="@{
+      try {
+        if (DateTime.UtcNow.Subtract((DateTime)context.Variables[&quot;inventoryStarted&quot;]).TotalSeconds >= 5) { throw new Exception(); }
+        var response = context.Variables[&quot;inventoryPage&quot;] as IResponse;
+        if (response == null || response.StatusCode != 200 || response.Body == null) { throw new Exception(); }
+        var bytes = response.Body.As&lt;byte[]&gt;(preserveContent: true);
+        if (bytes == null || bytes.Length > 1048576) { throw new Exception(); }
+        var body = response.Body.As&lt;string&gt;();
+        if (body == null || body.Length > 1048576 || Encoding.UTF8.GetByteCount(body) > 1048576) { throw new Exception(); }
+        var page = JObject.Parse(body);
+        var rows = page[&quot;value&quot;] as JArray;
+        var state = JObject.Parse((string)context.Variables[&quot;inventoryState&quot;]);
+        if (rows == null || (int)state[&quot;count&quot;] + rows.Count > 1000) { throw new Exception(); }
+        state[&quot;count&quot;] = (int)state[&quot;count&quot;] + rows.Count;
+        var ids = (JArray)state[&quot;ids&quot;];
+        var seenIds = new HashSet&lt;string&gt;(ids.Select(id => (string)id), StringComparer.OrdinalIgnoreCase);
+        var data = (JArray)state[&quot;data&quot;];
+        foreach (var token in rows) {
+          var row = token as JObject;
+          if (row == null || row[&quot;name&quot;] == null || row[&quot;name&quot;].Type != JTokenType.String || row[&quot;id&quot;] == null || row[&quot;id&quot;].Type != JTokenType.String || row[&quot;type&quot;] == null || row[&quot;type&quot;].Type != JTokenType.String) { throw new Exception(); }
+          var name = (string)row[&quot;name&quot;];
+          if (!Regex.IsMatch(name, @&quot;\A[A-Za-z0-9][A-Za-z0-9_.-]*\z&quot;) || !seenIds.Add(name) || !string.Equals((string)row[&quot;id&quot;], (string)state[&quot;account&quot;] + &quot;/deployments/&quot; + name, StringComparison.OrdinalIgnoreCase) || !string.Equals((string)row[&quot;type&quot;], &quot;Microsoft.CognitiveServices/accounts/deployments&quot;, StringComparison.OrdinalIgnoreCase)) { throw new Exception(); }
+          ids.Add(name);
+          var properties = row[&quot;properties&quot;] as JObject;
+          if (properties == null || properties[&quot;provisioningState&quot;] == null || properties[&quot;provisioningState&quot;].Type != JTokenType.String || string.IsNullOrWhiteSpace((string)properties[&quot;provisioningState&quot;])) { throw new Exception(); }
+          if (!string.Equals((string)properties[&quot;provisioningState&quot;], &quot;Succeeded&quot;, StringComparison.OrdinalIgnoreCase)) { continue; }
+          var model = properties[&quot;model&quot;] as JObject;
+          if (model == null || model[&quot;name&quot;] == null || model[&quot;name&quot;].Type != JTokenType.String || string.IsNullOrWhiteSpace((string)model[&quot;name&quot;])) { throw new Exception(); }
+          var format = model[&quot;format&quot;];
+          var publisher = model[&quot;publisher&quot;];
+          if ((format != null &amp;&amp; format.Type != JTokenType.Null &amp;&amp; (format.Type != JTokenType.String || string.IsNullOrWhiteSpace((string)format))) || (publisher != null &amp;&amp; publisher.Type != JTokenType.Null &amp;&amp; (publisher.Type != JTokenType.String || string.IsNullOrWhiteSpace((string)publisher))) || (string.IsNullOrWhiteSpace((string)format) &amp;&amp; string.IsNullOrWhiteSpace((string)publisher))) { throw new Exception(); }
+          if (!string.Equals((string)format, &quot;Anthropic&quot;, StringComparison.OrdinalIgnoreCase) &amp;&amp; !string.Equals((string)publisher, &quot;Anthropic&quot;, StringComparison.OrdinalIgnoreCase)) { continue; }
+          var projected = new JObject(new JProperty(&quot;id&quot;, name), new JProperty(&quot;display_name&quot;, name));
+          var family = Regex.Match((string)model[&quot;name&quot;], @&quot;\Aclaude-(?:[0-9]+(?:[.-][0-9]+)*-)?(opus|sonnet|haiku)(?:-|\z)&quot;, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Groups[1].Value.ToLowerInvariant();
+          if (family != &quot;&quot;) {
+            projected[&quot;anthropic_family_tier&quot;] = family;
+            projected[&quot;is_family_default&quot;] = name == (string)state[&quot;pins&quot;][family];
+          }
+          data.Add(projected);
+        }
+        state[&quot;next&quot;] = &quot;&quot;;
+        var nextToken = page[&quot;nextLink&quot;];
+        if (nextToken != null &amp;&amp; nextToken.Type != JTokenType.Null) {
+          if (nextToken.Type != JTokenType.String) { throw new Exception(); }
+          var next = (string)nextToken;
+          if (next != &quot;&quot;) {
+            if (next.Length > 8192 || next.Any(c => char.IsControl(c) || char.IsWhiteSpace(c)) || next.Contains(&quot;\\&quot;) || Regex.IsMatch(next, @&quot;%(?![0-9a-fA-F]{2})&quot;)) { throw new Exception(); }
+            var parts = Regex.Match(next, @&quot;\Ahttps://management\.azure\.com(?::443)?(/[^?#]*)\?([^#]+)\z&quot;, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!parts.Success || Regex.IsMatch(parts.Groups[1].Value, @&quot;%(?:2f|5c|25)&quot;, RegexOptions.IgnoreCase) || !string.Equals(Uri.UnescapeDataString(parts.Groups[1].Value), (string)state[&quot;account&quot;] + &quot;/deployments&quot;, StringComparison.OrdinalIgnoreCase)) { throw new Exception(); }
+            var query = new Dictionary&lt;string, string&gt;(StringComparer.OrdinalIgnoreCase);
+            foreach (var parameter in parts.Groups[2].Value.Split('&amp;')) {
+              var separator = parameter.IndexOf('=');
+              if (separator &lt; 1) { throw new Exception(); }
+              var key = System.Net.WebUtility.UrlDecode(parameter.Substring(0, separator));
+              var value = System.Net.WebUtility.UrlDecode(parameter.Substring(separator + 1));
+              if ((key != &quot;api-version&quot; &amp;&amp; !string.Equals(key, &quot;$skiptoken&quot;, StringComparison.OrdinalIgnoreCase)) || query.ContainsKey(key) || value.Length == 0 || value.Any(c => char.IsControl(c)) || parameter.Contains(&quot;;&quot;)) { throw new Exception(); }
+              query.Add(key, value);
+            }
+            if (query.Count != 2 || !query.ContainsKey(&quot;api-version&quot;) || query[&quot;api-version&quot;] != &quot;2024-10-01&quot; || !query.ContainsKey(&quot;$skiptoken&quot;)) { throw new Exception(); }
+            var seen = (JArray)state[&quot;seen&quot;];
+            if (seen.Any(value => (string)value == query[&quot;$skiptoken&quot;])) { throw new Exception(); }
+            seen.Add(query[&quot;$skiptoken&quot;]);
+            state[&quot;next&quot;] = &quot;https://management.azure.com&quot; + (string)state[&quot;path&quot;] + &quot;?&quot; + parts.Groups[2].Value;
+          }
+        }
+        return state.ToString(Newtonsoft.Json.Formatting.None);
+      } catch { throw new Exception(&quot;Model inventory unavailable.&quot;); }
+    }" />
+  </when>
+</choose>

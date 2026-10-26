@@ -38,31 +38,77 @@
       </when>
     </choose>
     <set-variable name="callerKey" value="@((string)context.Variables[&quot;callerTenantId&quot;] + &quot;:&quot; + (string)context.Variables[&quot;callerObjectId&quot;])" />
-    <set-variable name="modelCatalog" value="@(System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String(&quot;${model_catalog_base64}&quot;)))" />
     <choose>
       <when condition="@(context.Operation.Id == &quot;models&quot; &amp;&amp; context.Request.Method == &quot;GET&quot;)">
         <rate-limit-by-key calls="{{per-user-rate-limit}}" renewal-period="60" counter-key="@(&quot;claude-foundry:models:rpm:&quot; + (string)context.Variables[&quot;callerKey&quot;])" />
+        <!-- Only inventory failures are redacted; caller authentication and RPM keep their existing responses. -->
+        <set-variable name="inventoryActive" value="@(true)" />
+        <set-variable name="inventoryStarted" value="@(DateTime.UtcNow)" />
+        <set-variable name="inventoryConfiguration" value="${inventory_config_base64}" />
+        <set-variable name="inventoryState" value="@{
+          try {
+            var encoded = (string)context.Variables[&quot;inventoryConfiguration&quot;];
+            if (encoded.Length > 16384) { throw new Exception(); }
+            var config = JObject.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
+            var accountToken = config[&quot;account_resource_id&quot;];
+            var pins = config[&quot;pins&quot;] as JObject;
+            if (accountToken == null || accountToken.Type != JTokenType.String || pins == null) { throw new Exception(); }
+            var account = (string)accountToken;
+            if (!Regex.IsMatch(account, @&quot;\A/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourceGroups/[\p{L}\p{Nd}_().-]{0,89}[\p{L}\p{Nd}_()-]/providers/Microsoft\.CognitiveServices/accounts/[a-z0-9][a-z0-9_.-]{1,63}\z&quot;, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) { throw new Exception(); }
+            foreach (var role in new [] { &quot;opus&quot;, &quot;sonnet&quot;, &quot;haiku&quot; }) {
+              if (pins[role] == null || pins[role].Type != JTokenType.String || !Regex.IsMatch((string)pins[role], @&quot;\A[A-Za-z0-9][A-Za-z0-9_.-]*\z&quot;)) { throw new Exception(); }
+            }
+            var path = string.Join(&quot;/&quot;, account.Split('/').Select(segment => Uri.EscapeDataString(segment))) + &quot;/deployments&quot;;
+            var state = new JObject();
+            state[&quot;account&quot;] = account;
+            state[&quot;path&quot;] = path;
+            state[&quot;pins&quot;] = pins;
+            state[&quot;next&quot;] = &quot;https://management.azure.com&quot; + path + &quot;?api-version=2024-10-01&quot;;
+            state[&quot;seen&quot;] = new JArray();
+            state[&quot;ids&quot;] = new JArray();
+            state[&quot;data&quot;] = new JArray();
+            state[&quot;count&quot;] = 0;
+            using (var hash = System.Security.Cryptography.SHA256.Create()) {
+              state[&quot;accountKey&quot;] = &quot;claude-foundry:models:source:&quot; + Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(account.ToLowerInvariant())));
+              state[&quot;cacheKey&quot;] = &quot;claude-foundry:models:v1:&quot; + Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(account.ToLowerInvariant() + &quot;\n&quot; + pins.ToString(Newtonsoft.Json.Formatting.None))));
+            }
+            return state.ToString(Newtonsoft.Json.Formatting.None);
+          } catch { throw new Exception(&quot;Model inventory unavailable.&quot;); }
+        }" />
+        <set-variable name="inventoryCacheKey" value="@((string)JObject.Parse((string)context.Variables[&quot;inventoryState&quot;])[&quot;cacheKey&quot;])" />
+        <cache-lookup-value key="@((string)context.Variables[&quot;inventoryCacheKey&quot;])" variable-name="inventoryResult" caching-type="internal" />
+        <choose>
+          <when condition="@(!context.Variables.ContainsKey(&quot;inventoryResult&quot;) || context.Variables[&quot;inventoryResult&quot;] == null)">
+            <rate-limit-by-key calls="10" renewal-period="10" counter-key="@((string)JObject.Parse((string)context.Variables[&quot;inventoryState&quot;])[&quot;accountKey&quot;])" />
+            ${inventory_pages}
+            <set-variable name="inventoryResult" value="@{
+              try {
+                var state = JObject.Parse((string)context.Variables[&quot;inventoryState&quot;]);
+                if ((string)state[&quot;next&quot;] != &quot;&quot;) { throw new Exception(); }
+                var models = (JArray)state[&quot;data&quot;];
+                var pins = (JObject)state[&quot;pins&quot;];
+                var result = new JArray();
+                var emitted = new HashSet&lt;string&gt;(StringComparer.Ordinal);
+                foreach (var role in new [] { &quot;opus&quot;, &quot;sonnet&quot;, &quot;haiku&quot; }) {
+                  var model = models.FirstOrDefault(row => (string)row[&quot;id&quot;] == (string)pins[role]);
+                  if (model != null &amp;&amp; emitted.Add((string)model[&quot;id&quot;])) { result.Add(model); }
+                }
+                foreach (var model in models.OrderBy(row => (string)row[&quot;id&quot;], StringComparer.Ordinal)) {
+                  if (emitted.Add((string)model[&quot;id&quot;])) { result.Add(model); }
+                }
+                var body = new JObject(new JProperty(&quot;data&quot;, result)).ToString(Newtonsoft.Json.Formatting.None);
+                if (DateTime.UtcNow.Subtract((DateTime)context.Variables[&quot;inventoryStarted&quot;]).TotalSeconds >= 5) { throw new Exception(); }
+                return body;
+              } catch { throw new Exception(&quot;Model inventory unavailable.&quot;); }
+            }" />
+            <cache-store-value key="@((string)context.Variables[&quot;inventoryCacheKey&quot;])" value="@((string)context.Variables[&quot;inventoryResult&quot;])" duration="30" caching-type="internal" />
+          </when>
+        </choose>
         <return-response>
           <set-status code="200" reason="OK" />
-          <set-header name="Content-Type" exists-action="override">
-            <value>application/json</value>
-          </set-header>
-          <set-body>@((string)context.Variables["modelCatalog"])</set-body>
-        </return-response>
-      </when>
-    </choose>
-    <set-variable name="requestedModel" value="@{
-      try {
-        return (string)context.Request.Body.As&lt;JObject&gt;(preserveContent: true)[&quot;model&quot;] ?? &quot;&quot;;
-      } catch {
-        return &quot;&quot;;
-      }
-    }" />
-    <choose>
-      <when condition="@(!JObject.Parse((string)context.Variables[&quot;modelCatalog&quot;])[&quot;data&quot;].Any(model => (string)model[&quot;id&quot;] == (string)context.Variables[&quot;requestedModel&quot;]))">
-        <return-response>
-          <set-status code="400" reason="Bad Request" />
-          <set-body>Request body must be JSON with an approved model.</set-body>
+          <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+          <set-header name="Cache-Control" exists-action="override"><value>no-store</value></set-header>
+          <set-body>@((string)context.Variables["inventoryResult"])</set-body>
         </return-response>
       </when>
     </choose>
@@ -94,6 +140,16 @@
     <base />
   </outbound>
   <on-error>
+    <choose>
+      <when condition="@(context.Variables.ContainsKey(&quot;inventoryActive&quot;) &amp;&amp; (bool)context.Variables[&quot;inventoryActive&quot;])">
+        <return-response>
+          <set-status code="503" reason="Service Unavailable" />
+          <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+          <set-header name="Cache-Control" exists-action="override"><value>no-store</value></set-header>
+          <set-body>{"error":{"type":"api_error","message":"Model inventory is temporarily unavailable."}}</set-body>
+        </return-response>
+      </when>
+    </choose>
     <base />
   </on-error>
 </policies>

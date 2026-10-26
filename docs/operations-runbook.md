@@ -5,8 +5,10 @@ Use this runbook for common operational failures and controlled rollback. Keep a
 | Condition | Behavior | Operator action |
 | --- | --- | --- |
 | User/helper authentication failure | No fallback credential | Reauthenticate Azure CLI and verify Entra assignment/Conditional Access. |
-| Foundry 429 | Passed through; no retry or breaker trip | Check quota/limits; retry only where client policy permits. |
-| Foundry 5xx | Breaker opens after 50 backend 5xx/minute | Resolve backend issue and observe closure; no POST replay. |
+| Foundry inference 429 | Passed through; no retry or breaker trip | Check quota/limits; retry only where client policy permits. |
+| Foundry inference 5xx | Breaker opens after 50 backend 5xx/minute | Resolve backend issue and observe closure; no POST replay. |
+| Runtime model inventory unavailable | Fixed redacted 503; no partial/stale fallback after cache expiry; known-ID inference remains independent | Verify the bound account, existing APIM Foundry User assignment/propagation, ARM HTTPS egress, source throttling and documented pagination/size/time bounds. Do not add broad RBAC or restore a stale runtime list as a workaround. |
+| Model picker does not reflect an account deployment change | Gateway successes cache for 30 seconds, plus ARM propagation and client launch refresh | Distinguish the separately owned static pilot from deployed dynamic source. Verify cold/warm discovery and client refresh; the collector is not a runtime publication job. |
 | APIM saturation | Approximate local admission limits apply | Reduce load or deploy reviewed, measured fixed capacity. |
 | Regional/APIM failure | Optional public Priority routing automatically reselects healthy primary when it recovers, subject to DNS caching | Observe gateway and DNS recovery; no manual hold-down is implemented. Private DNS failover/failback remains operator-owned. |
 | Telemetry gap | Inference continues | Repair destination; do not enable payload capture. |
@@ -19,7 +21,7 @@ For repository-managed resources, dispatch the protected workflow from a compati
 
 For repository-managed [shared model discovery](model-discovery.md), the `models` operation and its operation policy exist even when no catalog is configured. Once deployed, record that discovery-capable revision as the **oldest compatible rollback baseline** for this feature. Revisions predating it would delete these resources; the existing `scripts/tofu/plan_summary.py` destructive-change gate rejects that rollback.
 
-To disable catalog-driven expansion, unset `MODEL_CATALOG_FILE` in the owning workflow's protected configuration and review/apply the non-destructive policy update from a compatible revision. `GET /v1/models` remains with the deduplicated role-pin fallback, and inference membership returns to the configured pins. Undo client opt-in through the client owner using prior settings/fixed-list backups. Removing the operation/policy instead requires a separately approved deletion path, not the standard rollback workflow; **do not relax the destructive-change gate**.
+To disable future collector jobs, set the **repository-level** `MODEL_DISCOVERY_ENABLED` variable explicitly to `false`; preserve the previous `MODEL_CATALOG_FILE` path **and its reviewed baseline file**. Deleting or unsetting the repository variable inherits any organization value; collection is disabled then only if that inherited value is not `true`. This does not cancel in-flight jobs or require an APIM deployment. `MODEL_CATALOG_FILE` is only a previous-review baseline/optional deployment governance input: removing the deployment input disables neither the collector nor runtime inventory, and deleting the baseline risks unreviewed rebootstrap. Undo client opt-in through the client owner using prior settings/fixed-list backups. Removing the operation/policy instead requires a separately approved deletion path, not the standard rollback workflow; **do not relax the destructive-change gate**.
 
 For private/HA drills, `ha-smoke` is observer-only. It retains evidence; operators separately perform approved traffic changes. See [troubleshooting](troubleshooting.md) for symptom-based recovery.
 

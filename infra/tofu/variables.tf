@@ -155,8 +155,8 @@ variable "foundry_resource_id" {
   default = ""
 
   validation {
-    condition     = var.foundry_resource_id == "" || can(regex("^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.CognitiveServices/accounts/[^/]+$", var.foundry_resource_id))
-    error_message = "foundry_resource_id must be empty or a Cognitive Services account resource ID."
+    condition     = var.foundry_resource_id == "" || can(regex("(?i)^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourceGroups/[\\p{L}\\p{Nd}_().-]{0,89}[\\p{L}\\p{Nd}_()-]/providers/Microsoft\\.CognitiveServices/accounts/[a-z0-9][a-z0-9_.-]{1,63}$", var.foundry_resource_id))
+    error_message = "foundry_resource_id must be empty or an unencoded Cognitive Services account resource ID with a subscription UUID and valid resource names; URL delimiters, escapes, and traversal are not allowed."
   }
 }
 
@@ -176,6 +176,11 @@ variable "secondary_foundry_resource_id" {
   type        = string
   description = "Resource ID of the existing secondary Foundry account. Empty uses foundry_resource_id."
   default     = ""
+
+  validation {
+    condition     = var.secondary_foundry_resource_id == "" || can(regex("(?i)^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourceGroups/[\\p{L}\\p{Nd}_().-]{0,89}[\\p{L}\\p{Nd}_()-]/providers/Microsoft\\.CognitiveServices/accounts/[a-z0-9][a-z0-9_.-]{1,63}$", var.secondary_foundry_resource_id))
+    error_message = "secondary_foundry_resource_id must be empty or an unencoded Cognitive Services account resource ID with a subscription UUID and valid resource names; URL delimiters, escapes, and traversal are not allowed."
+  }
 }
 
 variable "opus_deployment_name" {
@@ -183,6 +188,11 @@ variable "opus_deployment_name" {
   description = "Foundry deployment name pinned for the Opus role."
 
   default = ""
+
+  validation {
+    condition     = var.opus_deployment_name == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.opus_deployment_name))
+    error_message = "opus_deployment_name must be empty or start with an ASCII letter/digit and contain only ASCII letters, digits, underscores, periods, and hyphens."
+  }
 }
 
 variable "sonnet_deployment_name" {
@@ -190,6 +200,11 @@ variable "sonnet_deployment_name" {
   description = "Foundry deployment name pinned for the Sonnet role."
 
   default = ""
+
+  validation {
+    condition     = var.sonnet_deployment_name == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.sonnet_deployment_name))
+    error_message = "sonnet_deployment_name must be empty or start with an ASCII letter/digit and contain only ASCII letters, digits, underscores, periods, and hyphens."
+  }
 }
 
 variable "haiku_deployment_name" {
@@ -197,10 +212,15 @@ variable "haiku_deployment_name" {
   description = "Foundry deployment name pinned for the Haiku role."
 
   default = ""
+
+  validation {
+    condition     = var.haiku_deployment_name == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.haiku_deployment_name))
+    error_message = "haiku_deployment_name must be empty or start with an ASCII letter/digit and contain only ASCII letters, digits, underscores, periods, and hyphens."
+  }
 }
 
 variable "model_catalog" {
-  description = "Reviewed schema_version:1 deployment catalog contents, not a file path. Null keeps the legacy role-pin allowlist."
+  description = "Optional reviewed schema_version:1 catalog contents for governance and deployment-input compatibility, not a runtime inventory or inference allowlist. Null omits this review artifact."
   type = object({
     schema_version      = number
     account_resource_id = string
@@ -278,6 +298,11 @@ variable "claude_model_deployment_name" {
   type        = string
   description = "The one Anthropic deployment created and used for all Claude Code roles in greenfield mode."
   default     = ""
+
+  validation {
+    condition     = var.claude_model_deployment_name == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.claude_model_deployment_name))
+    error_message = "claude_model_deployment_name must be empty or start with an ASCII letter/digit and contain only ASCII letters, digits, underscores, periods, and hyphens."
+  }
 }
 
 variable "claude_model_name" {
