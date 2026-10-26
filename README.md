@@ -34,6 +34,8 @@ OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`
 
 Use the bundled helpers on macOS, Linux, WSL, and native Windows; supply the caller tenant UUID and audience, then pilot the installed client on each OS. [Configure managed Claude Code settings](docs/claude-code-managed-settings.md) and run the [client canary](docs/claude-code-canary.md). Claude Desktop is an optional preview; a [local Gateway-mode Chat pilot](docs/windows-desktop-pilot.md) worked without registry policy or a new OIDC client.
 
+For macOS/Linux Terminal, follow the [single-platform quick start and installation checks](docs/claude-code-managed-settings.md#macos-and-linux-terminal-quick-start); `--platform macos` or `--platform linux` avoids requiring unrelated OS helper paths. For macOS Desktop, use the [managed preview rollout](docs/desktop-deployment.md#macos-managed-preview-rollout), including profile deployment, discovery and rollback gates. Linux users should use Terminal, not Desktop.
+
 ## Automatic model discovery
 
 After the dynamic reader is published, adding or removing a successful Anthropic/Claude deployment in the **same bound Foundry account** is reflected on a fresh gateway inventory read, **without a gateway redeploy**. Neither the reader nor the separate governance collector deploys models. Freshness is **30-second gateway cache + ARM propagation + client startup refresh**: it is not instant and does not poll an already-open picker. Configured default pins are not automatically upgraded; missing pins are not fabricated and may leave a client choosing the first remaining model.

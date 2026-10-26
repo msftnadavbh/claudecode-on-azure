@@ -10,6 +10,21 @@ permissions:
   contents: read
 
 jobs:
+  posix-clients:
+    name: Client integration (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate client helpers and configuration
+        run: |
+          bash -n scripts/auth/apim-user-token-helper.sh
+          python3 -B -m unittest discover -s scripts/test -p 'test_auth_helper.py'
+          python3 -B -m unittest discover -s scripts/test -p 'test_*managed*.py'
+
   static:
     runs-on: ubuntu-latest
     steps:

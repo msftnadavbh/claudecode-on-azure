@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,37 @@ HELPER = REPO_ROOT / "scripts/auth/apim-user-token-helper.sh"
 
 
 class AuthHelperTests(unittest.TestCase):
+    def test_missing_azure_cli_has_fixed_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([shutil.which("bash"), str(HELPER)],
+                                    env={**os.environ, "PATH": directory},
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr, "az is required\n")
+
+    def test_helper_is_noninteractive_and_accepts_cli_line_endings(self):
+        with tempfile.TemporaryDirectory(prefix="helper path ") as directory:
+            root = Path(directory)
+            fake = root / "az"
+            fake.write_text(
+                '#!/usr/bin/env bash\n'
+                'if read -r input; then exit 9; fi\n'
+                'printf "%s" "$FAKE_OUTPUT"\n'
+            )
+            fake.chmod(0o700)
+            env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
+                   "APIM_AUDIENCE": "api://test-gateway",
+                   "APIM_TENANT_ID": "11111111-1111-1111-1111-111111111111"}
+            for output in ("fake-token", "fake-token\n", "fake-token\r\n"):
+                with self.subTest(output=output):
+                    result = subprocess.run([HELPER], env={**env, "FAKE_OUTPUT": output},
+                                            input="must-not-reach-cli\n", capture_output=True,
+                                            text=True, timeout=5)
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "fake-token\n")
+                    self.assertEqual(result.stderr, "")
+
     def test_helper_refreshes_without_persisting_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

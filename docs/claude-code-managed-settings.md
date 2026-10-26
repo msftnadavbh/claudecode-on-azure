@@ -24,6 +24,60 @@ Deploy the generated file through the organization’s management system:
 
 The files configure generic gateway mode, a five-minute helper cache, subprocess environment scrubbing, and deployment-name defaults. They do not contain a token, API key, Foundry-native setting, or user shell-profile configuration.
 
+## macOS and Linux Terminal quick start
+
+Use an organization-approved Claude Code release, Azure CLI, Bash, and Python **3.10+** for the generator. The bundled helper uses Bash features available on macOS's system Bash; it does not require GNU `timeout`, Homebrew Bash, or a custom token cache. On Apple Silicon and Intel Macs, install the appropriate native client and Azure CLI packages through your approved channel. Linux and WSL use the same shell helper; Linux Desktop integration is not provided.
+
+For a single OS, use `--platform macos` or `--platform linux`. Only that platform's helper path is required and only its settings file is written. Omitting `--platform` preserves the existing all-platform behavior and requires all three helper paths. Use a fresh output directory when switching platforms: generation does not delete older outputs or install anything.
+
+Example for macOS (replace the repository location, gateway, tenant, audience and deployment names):
+
+```bash
+REPO_ROOT="/absolute/path/to/claudecode-on-azure"
+python3 "$REPO_ROOT/scripts/claude_code/generate_managed_settings.py" \
+  --platform macos \
+  --gateway-url https://gateway.example/claude \
+  --audience api://gateway-app-id \
+  --tenant-id 11111111-1111-1111-1111-111111111111 \
+  --macos-helper-path "/Library/Company/Claude/apim-user-token-helper.sh" \
+  --opus-model opus-deployment --sonnet-model sonnet-deployment --haiku-model haiku-deployment \
+  --output-dir "$REPO_ROOT/out/claude-code"
+```
+
+For Linux/WSL, replace `--platform macos` with `--platform linux` and the helper option with `--linux-helper-path /opt/company/claude/apim-user-token-helper.sh`. Discovery remains an explicit `--enable-model-discovery` opt-in on either OS, and all three role pins remain required.
+
+### Install and verify
+
+Back up the existing managed settings and helper before changes. Have endpoint management review generated settings: installation replaces the whole file, so merge any other required organizational policy before deployment. Keep files and **every parent directory** administrator-owned and non-writable by ordinary users. The helper contains no credentials and must be executable by the signed-in user; do not install it root-only with mode `0700`.
+
+For an approved manual macOS pilot, the equivalent installation commands are:
+
+```bash
+sudo install -d -o root -g wheel -m 0755 "/Library/Application Support/ClaudeCode" "/Library/Company/Claude"
+sudo install -o root -g wheel -m 0644 "$REPO_ROOT/out/claude-code/macos/managed-settings.json" "/Library/Application Support/ClaudeCode/managed-settings.json"
+sudo install -o root -g wheel -m 0755 "$REPO_ROOT/scripts/auth/apim-user-token-helper.sh" "/Library/Company/Claude/apim-user-token-helper.sh"
+```
+
+For Linux/WSL:
+
+```bash
+sudo install -d -o root -g root -m 0755 /etc/claude-code /opt/company/claude
+sudo install -o root -g root -m 0644 "$REPO_ROOT/out/claude-code/linux/managed-settings.json" /etc/claude-code/managed-settings.json
+sudo install -o root -g root -m 0755 "$REPO_ROOT/scripts/auth/apim-user-token-helper.sh" /opt/company/claude/apim-user-token-helper.sh
+```
+
+On an existing fleet, follow the settings-first staged rollout and inheritance gate below rather than replacing the helper everywhere at once. Complete installation before launching the pilot. Sign in to Azure CLI through the approved interactive flow **as the pilot user, not with sudo**; helper execution must remain noninteractive. From the same terminal used to launch Claude Code, check `command -v az` and `command -v claude`. On macOS, a GUI-launched process may not inherit the terminal's Homebrew PATH (`/opt/homebrew/bin` on Apple Silicon or `/usr/local/bin` on Intel); configure the approved launch environment rather than copying Azure caches or embedding credentials.
+
+Supply the tenant and audience separately for a standalone helper check. Redirect stdout to avoid displaying the raw token:
+
+```bash
+export APIM_TENANT_ID=11111111-1111-1111-1111-111111111111
+export APIM_AUDIENCE=api://gateway-app-id
+"/Library/Company/Claude/apim-user-token-helper.sh" >/dev/null
+```
+
+On Linux use `/opt/company/claude/apim-user-token-helper.sh` instead. A zero exit status establishes only local token acquisition, not APIM authorization or client inheritance. Launch `claude` without sudo, verify the effective managed settings and run the [client canary](claude-code-canary.md). Do not use shell tracing or token/environment dumps. See [macOS/Linux diagnostics](troubleshooting.md#macoslinux-helper-diagnostics).
+
 ## Optional automatic model discovery
 
 The bundled helpers/generated settings support **macOS, Linux, WSL and native Windows**; this is integration coverage, not live discovery evidence. The [26 October publication](model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified) verified the gateway and a Windows **Desktop** local helper-script picker, **not dynamic gateway discovery on any terminal OS**. Historical Linux inference and helper tests do not prove CLI startup discovery. Native Windows managed-mode execution remains unverified as noted below.

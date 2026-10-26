@@ -18,6 +18,18 @@ Use this guide after checking the relevant Azure and GitHub evidence. Use approv
 
 For local tool failures, run `scripts/test/validate.sh`. For a safe synthetic SSE self-test, follow [load testing](load-testing.md); it proves only the local tool path.
 
+## macOS/Linux helper diagnostics
+
+| Symptom | Check and recovery |
+| --- | --- |
+| `az is required` | Azure CLI must be on the **helper child's** PATH. A GUI launch on macOS may not inherit a terminal's Homebrew PATH. Fix the approved launch environment and restart; do not copy caches or add fallback credentials. |
+| `APIM_AUDIENCE and APIM_TENANT_ID must be set` | Check managed settings and actual helper-child inheritance with scrubbing enabled. For a standalone check, explicitly export both nonsecret inputs; managed settings do not populate the parent shell. |
+| `Unable to acquire access token` | The CLI failed or returned empty/malformed output. Check approved Azure sign-in, tenant, consent and account selection as the same OS user. The helper deliberately suppresses raw CLI errors and never logs in interactively. |
+| Permission denied / helper not found | Use an absolute helper filename, executable by the user, with administrator-controlled parent directories. Regenerate settings for that path; do not pass a shell command as a helper filename or run Claude with sudo. |
+| Models missing after discovery opt-in | Fully restart the client, verify effective discovery settings and absence of overriding model lists, then distinguish a slow/cold gateway inventory request from an authentication failure. A cached picker is not proof of live discovery; retain role pins while investigating. |
+
+Use the [Terminal installation checks](claude-code-managed-settings.md#install-and-verify) without printing helper stdout. Do not enable shell tracing, dump the environment or decode tokens into logs. The POSIX helper currently has no internal acquisition deadline; an unresponsive Azure CLI can block it. Retain a bounded pilot/canary and investigate network/CLI health rather than claiming Windows helper timeout behavior applies on macOS/Linux.
+
 ## Windows helper diagnostics
 
 The native Windows helper reports only a safe category and fixed guidance: `configuration_invalid` names the invalid parameter without its value; `azure_cli_not_found` and `process_start_failed` identify local CLI setup/start failures. `subscription_metadata_invalid` means the explicitly selected cached subscription did not pass the required user/tenant/cloud/state checks; no token request follows. `azure_cli_timeout` means the shared 15s acquisition budget expired (startup and bounded cleanup can add wall-clock time); `azure_cli_failed` includes only the numeric exit code. `stream_read_failed` means either private CLI stream could not be read to completion within the shorter bounded wait, `invalid_token_output` means stdout was not one valid raw token, and `internal_error` or `cleanup_failed` indicates a local helper failure. Keep raw CLI output, tokens, exception messages, environment dumps, and token claims out of support logs.

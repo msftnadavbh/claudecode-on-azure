@@ -15,14 +15,6 @@ POLICY_KEYS = {
 
 
 def build_settings(args: argparse.Namespace) -> dict[str, str]:
-    models = [
-        {"anthropicFamilyTier": family, "isFamilyDefault": True, "name": name}
-        for family, name in (
-            ("sonnet", args.sonnet_model),
-            ("opus", args.opus_model),
-            ("haiku", args.haiku_model),
-        )
-    ]
     oidc = {
         "appendOfflineAccess": True,
         "bearerTokenType": "access_token",
@@ -47,7 +39,6 @@ def build_settings(args: argparse.Namespace) -> dict[str, str]:
         "inferenceGatewayBaseUrl": args.gateway_url,
         "inferenceGatewayOidc": json.dumps(oidc, sort_keys=True, separators=(",", ":")),
         "inferenceGatewayOidcAuthFlow": "browser",
-        "inferenceModels": json.dumps(models, sort_keys=True, separators=(",", ":")),
         "inferenceProvider": "gateway",
         "isClaudeCodeForDesktopEnabled": "true",
         "isDesktopExtensionEnabled": "false",
@@ -60,13 +51,24 @@ def build_settings(args: argparse.Namespace) -> dict[str, str]:
     }
     if getattr(args, "enable_model_discovery", False):
         values["modelDiscoveryEnabled"] = "true"
-        del values["inferenceModels"]
+    else:
+        models = [
+            {"anthropicFamilyTier": family, "isFamilyDefault": True, "name": getattr(args, f"{family}_model")}
+            for family in ("sonnet", "opus", "haiku")
+        ]
+        values["inferenceModels"] = json.dumps(models, sort_keys=True, separators=(",", ":"))
     return dict(sorted(values.items()))
 
 
 def validate(args: argparse.Namespace) -> None:
-    for name in ("gateway_url", "tenant_id", "desktop_client_id", "delegated_scope", "deployment_org_id", "organization", "sonnet_model", "opus_model", "haiku_model"):
-        if any(unicodedata.category(character) == "Cc" for character in getattr(args, name)):
+    model_names = ("sonnet_model", "opus_model", "haiku_model")
+    for name in ("gateway_url", "tenant_id", "desktop_client_id", "delegated_scope", "deployment_org_id", "organization", *model_names):
+        value = getattr(args, name, None)
+        if value is None and name in model_names:
+            if not getattr(args, "enable_model_discovery", False):
+                raise ValueError(f"--{name.replace('_', '-')} is required unless --enable-model-discovery is set")
+            continue
+        if any(unicodedata.category(character) == "Cc" for character in value):
             raise ValueError(f"--{name.replace('_', '-')} must contain no control characters")
 
     for name in ("tenant_id", "desktop_client_id", "deployment_org_id"):
@@ -99,8 +101,10 @@ def validate(args: argparse.Namespace) -> None:
             or "?" in args.delegated_scope or "#" in args.delegated_scope):
         raise ValueError("--delegated-scope must be a full api:// or https:// delegated scope URI")
 
-    for name in ("organization", "sonnet_model", "opus_model", "haiku_model"):
-        value = getattr(args, name)
+    for name in ("organization", *model_names):
+        value = getattr(args, name, None)
+        if value is None:
+            continue
         if not value.strip() or any(ord(character) < 32 for character in value):
             raise ValueError(f"--{name.replace('_', '-')} must be non-empty and contain no control characters")
 
@@ -162,9 +166,9 @@ def main() -> None:
     parser.add_argument("--delegated-scope", required=True)
     parser.add_argument("--deployment-org-id", required=True)
     parser.add_argument("--organization", required=True)
-    parser.add_argument("--sonnet-model", required=True)
-    parser.add_argument("--opus-model", required=True)
-    parser.add_argument("--haiku-model", required=True)
+    parser.add_argument("--sonnet-model", help="Required unless --enable-model-discovery is set.")
+    parser.add_argument("--opus-model", help="Required unless --enable-model-discovery is set.")
+    parser.add_argument("--haiku-model", help="Required unless --enable-model-discovery is set.")
     parser.add_argument("--enable-model-discovery", action="store_true", help="Opt in after publishing /v1/models; remove the explicit model list.")
     parser.add_argument("--windows-scope", choices=("machine", "user"), default="machine")
     parser.add_argument("--disable-cowork", action="store_true")
