@@ -219,6 +219,17 @@ class IsolationTests(unittest.TestCase):
         for network in ["10.20.30.0/24", "10.20.40.5/32"]:
             self.assertTrue(ipaddress.ip_network(network).is_private)
 
+    def test_postgres_can_read_both_configs_before_start(self):
+        installer = (ROOT / "install.sh").read_text()
+        configs = "/etc/postgresql/16/main/{conf.d/claude-gateway.conf,pg_hba.conf}"
+        ownership = f"chown root:postgres {configs}"
+        permissions = f"chmod 0640 {configs}"
+        self.assertIn(ownership, installer)
+        self.assertIn(permissions, installer)
+        self.assertLess(installer.index("host all all ::/0 reject"), installer.index(ownership))
+        self.assertLess(installer.index(ownership), installer.index(permissions))
+        self.assertLess(installer.index(permissions), installer.index("systemctl enable --now postgresql"))
+
 
 if __name__ == "__main__":
     unittest.main()

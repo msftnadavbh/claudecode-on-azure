@@ -88,6 +88,8 @@ host claude_gateway claude_gateway 127.0.0.1/32 scram-sha-256
 host all all 0.0.0.0/0 reject
 host all all ::/0 reject
 HBA
+chown root:postgres /etc/postgresql/16/main/{conf.d/claude-gateway.conf,pg_hba.conf}
+chmod 0640 /etc/postgresql/16/main/{conf.d/claude-gateway.conf,pg_hba.conf}
 systemctl enable --now postgresql
 systemctl restart postgresql
 # Pipe the generated hexadecimal password, never place it in argv or a URL.
