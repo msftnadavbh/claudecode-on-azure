@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import plistlib
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -134,6 +135,53 @@ class DesktopManagedConfigTests(unittest.TestCase):
                         write_outputs(self.args)
                     self.assertFalse(output.exists())
             setattr(self.args, name, original)
+
+    def test_discovery_omits_fixed_list_and_deletes_it_in_selected_windows_scope(self):
+        legacy = build_settings(self.args)
+        self.args.enable_model_discovery = True
+        for scope in ("machine", "user"):
+            with self.subTest(scope=scope):
+                self.args.windows_scope = scope
+                macos, windows, removal = write_outputs(self.args)
+                settings = build_settings(self.args)
+                expected = {**legacy, "modelDiscoveryEnabled": "true"}
+                expected.pop("inferenceModels")
+                self.assertEqual(settings, expected)
+                profile_settings = plistlib.loads(macos.read_bytes())["PayloadContent"][0]["PayloadContent"]["com.anthropic.claudefordesktop"]["Forced"][0]["mcx_preference_settings"]
+                self.assertEqual(profile_settings, settings)
+                lines = windows.read_bytes().decode("utf-16").splitlines()
+                hive = "HKEY_LOCAL_MACHINE" if scope == "machine" else "HKEY_CURRENT_USER"
+                self.assertEqual(lines[2], f"[{hive}\\SOFTWARE\\Policies\\Claude]")
+                self.assertEqual(lines.count('"inferenceModels"=-'), 1)
+                existing = {**legacy, "UnrelatedPolicy": "keep"}
+                for line in lines[3:]:
+                    key, value = line.split("=", 1)
+                    if value == "-":
+                        existing.pop(json.loads(key), None)
+                    else:
+                        existing[json.loads(key)] = json.loads(value)
+                self.assertEqual(existing, {**settings, "UnrelatedPolicy": "keep"})
+                remove_lines = removal.read_bytes().decode("utf-16").splitlines()
+                self.assertEqual(remove_lines[2], lines[2])
+                self.assertEqual(set(remove_lines[3:]), {f'"{key}"=-' for key in legacy})
+                self.assertFalse(any(line.startswith("[-") for line in remove_lines))
+                for line in remove_lines[3:]:
+                    existing.pop(json.loads(line[:-2]), None)
+                self.assertEqual(existing, {"UnrelatedPolicy": "keep"})
+                for path in (windows, removal):
+                    self.assertTrue(path.read_bytes().startswith(b"\xff\xfe"))
+                    self.assertNotIn("\n", path.read_bytes().decode("utf-16").replace("\r\n", ""))
+
+    def test_cli_discovery_opt_in(self):
+        arguments = [sys.executable, "-B", str(REPO_ROOT / "scripts/desktop/generate_managed_config.py")]
+        for name, value in vars(self.args).items():
+            if name != "disable_cowork":
+                arguments.extend(["--" + name.replace("_", "-"), value])
+        result = subprocess.run(arguments + ["--enable-model-discovery"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        windows = (Path(self.directory.name) / "claude-desktop-managed.reg").read_bytes().decode("utf-16")
+        self.assertIn('"modelDiscoveryEnabled"="true"', windows)
+        self.assertIn('"inferenceModels"=-', windows)
 
 
 if __name__ == "__main__":

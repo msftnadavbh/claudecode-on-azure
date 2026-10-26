@@ -199,6 +199,63 @@ variable "haiku_deployment_name" {
   default = ""
 }
 
+variable "model_catalog" {
+  description = "Reviewed schema_version:1 deployment catalog contents, not a file path. Null keeps the legacy role-pin allowlist."
+  type = object({
+    schema_version      = number
+    account_resource_id = string
+    base_url            = string
+    default_model       = string
+    models = list(object({
+      id            = string
+      display_name  = string
+      description   = string
+      model_name    = string
+      model_version = string
+      sku           = string
+      hosting = optional(object({
+        source         = string
+        source_account = string
+      }))
+    }))
+  })
+  default = null
+
+  validation {
+    condition = var.model_catalog == null ? true : try(
+      var.model_catalog.schema_version == 1 && length(var.model_catalog.models) > 0 &&
+      length(distinct([for model in var.model_catalog.models : lower(model.id)])) == length(var.model_catalog.models) &&
+      var.model_catalog.models[0].id == var.model_catalog.default_model &&
+      alltrue([for model in var.model_catalog.models :
+        can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", model.id)) && can(regex("claude|anthropic", lower(model.id))) &&
+        length(trimspace(model.display_name)) > 0 && length(trimspace(model.description)) > 0 && length(trimspace(model.model_name)) > 0 &&
+        (model.model_version == null ? true : length(trimspace(model.model_version)) > 0) &&
+        (model.sku == null ? true : length(trimspace(model.sku)) > 0)
+      ]), false
+    )
+    error_message = "model_catalog must be schema_version:1 with non-empty metadata, unique discoverable deployment IDs, and default_model present and first; unknown version/SKU must be null."
+  }
+
+  validation {
+    condition = var.model_catalog == null ? true : try(
+      var.deployment_mode == "existing" &&
+      lower(var.model_catalog.account_resource_id) == lower(var.foundry_resource_id) &&
+      lower(var.model_catalog.base_url) == lower(var.foundry_base_url) && endswith(var.model_catalog.base_url, "/anthropic") && endswith(var.foundry_base_url, "/anthropic") &&
+      var.model_catalog.default_model == var.opus_deployment_name &&
+      alltrue([for pin in [var.opus_deployment_name, var.sonnet_deployment_name, var.haiku_deployment_name] : contains([for model in var.model_catalog.models : model.id], pin)]), false
+    )
+    error_message = "model_catalog requires existing mode, the primary account/base URL, every role pin, and the configured Opus pin as default_model."
+  }
+
+  validation {
+    condition = var.model_catalog == null ? true : try(
+      (var.secondary_foundry_base_url == "" || (lower(var.secondary_foundry_base_url) == lower(var.foundry_base_url) && endswith(var.secondary_foundry_base_url, "/anthropic"))) &&
+      (var.secondary_foundry_resource_id == "" || lower(var.secondary_foundry_resource_id) == lower(var.foundry_resource_id)), false
+    )
+    error_message = "model_catalog cannot use a distinct secondary Foundry account/backend; a secondary APIM may use the same Foundry target."
+  }
+}
+
 variable "foundry_account_name" {
   type        = string
   description = "Foundry account name; created in greenfield mode."

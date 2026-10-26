@@ -4,11 +4,12 @@ Deploy a governed Claude Code gateway that authenticates callers with Microsoft 
 
 ## What this deploys
 
-- `/claude` on APIM, with native `/v1/messages` and `/v1/messages/count_tokens`, unbuffered SSE, and APIM-local unauthenticated `/health`.
+- `/claude` on APIM, with native `/v1/messages` and `/v1/messages/count_tokens`, authenticated `/v1/models`, unbuffered SSE, and APIM-local unauthenticated `/health`.
 - A fixed-capacity, public, single-region `StandardV2` APIM baseline. Use `PremiumV2` only for zone redundancy or private VNet injection.
 - Optional second APIM and public Traffic Manager. You provide private DNS, failover, custom DNS, and certificates.
 - APIM policy, managed identity access to Foundry, optional telemetry and alerts, and managed Claude Code configuration generators. In `greenfield` mode it also creates a new resource group, one AIServices Foundry account, one project, and one Claude deployment.
 - Bundled macOS/Linux/WSL and native Windows Entra token helpers, managed Claude Code settings, and optional Desktop configuration. Per-principal monthly token quota defaults to **disabled**; enabled native quotas are advisory controls, not dollar caps.
+- Read-only discovery of deployed Claude models, a shared gateway catalog, and an opt-in daily collection workflow. Discovery reports new catalog candidates; it never deploys models automatically.
 
 ![Conceptual Claude Code Enterprise Gateway on Azure architecture. The written implementation boundary below is authoritative.](assets/architecture/claude-code-enterprise-gateway.png)
 
@@ -27,21 +28,44 @@ You still provide external Blob state/container, Entra caller app/roles/consent,
 3. Dispatch the protected `deploy` workflow with matching `environment_profile` and `networking_profile`.
 4. Retain public smoke evidence, or run protected in-network `ha-smoke` for private or HA deployments.
 
-OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.12.0`. Existing-mode Foundry deployment names are allowlisted; a secondary Foundry account must expose the same names.
+OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.12.0`. Existing-mode Foundry deployment names are allowlisted; legacy secondary Foundry accounts must expose the same role pins. An optional [reviewed model catalog](docs/model-discovery.md) expands the allowlist to other deployed Claude models on the same Foundry account without changing defaults or deploying catalog-only candidates.
 
 ## Configure Claude Code
 
 Use the bundled helpers on macOS, Linux, WSL, and native Windows; supply the caller tenant UUID and audience, then pilot the installed client on each OS. [Configure managed Claude Code settings](docs/claude-code-managed-settings.md) and run the [client canary](docs/claude-code-canary.md). Claude Desktop is an optional preview; a [local Gateway-mode Chat pilot](docs/windows-desktop-pilot.md) worked without registry policy or a new OIDC client.
 
+[Shared model discovery](docs/model-discovery.md) is opt-in for both clients. Both configuration generators accept `--enable-model-discovery`; enable it only after the owning gateway publishes `/v1/models`. The guide covers catalog collection, reviewed publication, client configuration, and rollback.
+
+### Live pilot status — 26 October 2026
+
+- The existing gateway now serves an authenticated discovery endpoint with **Opus 5.5 (default)** and **Opus 5**. Valid credentials returned the catalog; missing and malformed credentials returned `401`.
+- The documented Windows Desktop pilot is configured for discovery with its existing helper and authentication preserved. Its next-launch picker and end-to-end inference have not been verified.
+- This is a **static, reviewed catalog**, not automatic Azure inventory refresh. The daily collector remains disabled until configured, and publication is a separate reviewed step.
+- Only the discovery operation/policy and the single-PC profile were changed. **Full OpenTofu adoption remains pending**: live API identifiers and authentication still differ from the repository baseline, so do not apply the full configuration blindly.
+
+See the [bounded publication record](docs/model-discovery.md#2026-10-26-bounded-live-pilot--configuredapi-verified) and [Windows Desktop record](docs/windows-desktop-pilot.md#2026-10-26-discovery--configuredapi-verified) for evidence and recovery boundaries.
+
 ## Validate
 
-Requires Bash, Python 3, ShellCheck, and OpenTofu.
+Run commands directly from this standalone repository root (`claudecode-prod/`,
+containing this README). The retained `claudecodepoc-hard/` directory is an ignored
+historical checkout, not a runtime dependency; do not change into it. Paths in
+`findings.md` describe the earlier checkout and remain historical evidence.
+
+Quick offline checks (fake credentials only; no provider initialization):
+
+```bash
+python3 -B -m unittest discover -s scripts/test -p 'test_*.py'
+python3 -B migration/tofu/test_generate_import_manifest.py
+```
+
+Full validation requires Bash, Python 3, ShellCheck, and OpenTofu:
 
 ```bash
 scripts/test/validate.sh
 ```
 
-This checks repository configuration and local tools; Python compilation writes bytecode and OpenTofu init may write local provider files. Native Windows helper tests skip on Linux: verify the actual installed helper on Windows. It does not prove Foundry quota, APIM capacity, private connectivity, SLOs, failover, or client-fleet behavior; use the [production readiness gates](docs/production-readiness.md) before rollout.
+This checks repository configuration and local tools; Python compilation writes bytecode and OpenTofu initialization installs the providers pinned in `infra/tofu/.terraform.lock.hcl`. The first full validation needs network access to download any providers not already available locally or cached; it is not an offline-only check. Native Windows helper tests skip on Linux: verify the actual installed helper on Windows. It does not prove Foundry quota, APIM capacity, private connectivity, SLOs, failover, or client-fleet behavior; use the [production readiness gates](docs/production-readiness.md) before rollout.
 
 ## Documentation
 

@@ -48,6 +48,27 @@ class ClaudeCodeManagedSettingsTests(unittest.TestCase):
             "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
         })
 
+    def test_discovery_opt_in_only_adds_the_gateway_flag(self):
+        paths = write_outputs(self.args)
+        legacy = {platform: json.loads(path.read_text()) for platform, path in paths.items()}
+        self.args.enable_model_discovery = True
+        for platform, path in write_outputs(self.args).items():
+            settings = json.loads(path.read_text())
+            self.assertEqual(settings["env"].pop("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"), "1")
+            self.assertEqual(settings, legacy[platform])
+        self.args.enable_model_discovery = False
+        for platform, path in write_outputs(self.args).items():
+            self.assertEqual(json.loads(path.read_text()), legacy[platform])
+
+    def test_cli_accepts_explicit_discovery_flag(self):
+        arguments = [sys.executable, "-B", str(REPO_ROOT / "scripts/claude_code/generate_managed_settings.py")]
+        for name, value in vars(self.args).items():
+            arguments.extend(["--" + name.replace("_", "-"), value])
+        result = subprocess.run(arguments + ["--enable-model-discovery"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        settings = json.loads((Path(self.directory.name) / "windows/managed-settings.json").read_text())
+        self.assertEqual(settings["env"]["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"], "1")
+
     def test_output_paths_and_encoding(self) -> None:
         outputs = write_outputs(self.args)
         self.assertEqual(set(outputs), set(PLATFORM_PATHS))

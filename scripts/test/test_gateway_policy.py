@@ -1,8 +1,12 @@
 """Offline structural evidence only; live Entra/APIM behavior still needs validation."""
 from pathlib import Path
+import json
 import os
 import re
 import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -54,7 +58,7 @@ class GatewayPolicyTests(unittest.TestCase):
 
     def test_policy_and_deployment_invariants(self):
         policies = {name: (ROOT / f"apim/policies/{name}.xml").read_text()
-                    for name in ("claude-base", "claude-messages", "claude-count-tokens")}
+                    for name in ("claude-base", "claude-messages", "claude-count-tokens", "claude-models")}
         base = policies["claude-base"]
         root = ET.fromstring(base)
         assert root.tag == "policies"
@@ -96,7 +100,7 @@ class GatewayPolicyTests(unittest.TestCase):
         model = inbound.find("set-variable[@name='requestedModel']")
         assert model is not None and 'As<JObject>(preserveContent: true)' in model.get("value", "")
         assert len(inbound.findall("choose/when/return-response/set-status[@code='400']")) == 1
-        assert all(f"{{{{{name}}}}}" in base for name in ("opus-model", "sonnet-model", "haiku-model"))
+        assert all(f"{{{{{name}}}}}" not in base for name in ("opus-model", "sonnet-model", "haiku-model"))
         assert inbound.find("set-variable[@name='callerKey']").get("value") == '@((string)context.Variables["callerTenantId"] + ":" + (string)context.Variables["callerObjectId"])'
         deleted_headers = {node.get("name", "").lower() for node in inbound.findall("set-header") if node.get("exists-action") == "delete"}
         assert {"authorization", "x-api-key", "api-key", "ocp-apim-subscription-key"} <= deleted_headers
@@ -213,4 +217,175 @@ class GatewayPolicyTests(unittest.TestCase):
         assert "jq '{primaryGatewayUrl:" in workflow
         assert 'for attempt in {1..6}; do' in workflow and 'sleep 30' in workflow
         assert workflow.count('scripts/foundry_preflight.py') >= 3
-        assert 'from pathlib import Path\nimport re\n\nfor page in Path(".").glob("**/*.md")' in (ROOT / "scripts/test/validate.sh").read_text()
+        assert 'os.walk(".", followlinks=False)' in (ROOT / "scripts/test/validate.sh").read_text()
+
+    def test_models_get_inherits_authorization_then_returns_before_body_or_backend(self):
+        root = ET.parse(ROOT / "apim/policies/claude-base.xml").getroot()
+        inbound = root.find("inbound")
+        children = list(inbound)
+        branch = next(node for node in inbound.findall("choose") if node.find("when").get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
+        authorization = next(node for node in inbound.findall("choose") if node.find("when").get("condition") == '@(!(bool)context.Variables["callerAuthorized"])')
+        order = [inbound.find("validate-azure-ad-token"), authorization,
+                 inbound.find("set-variable[@name='callerKey']"), inbound.find("set-variable[@name='modelCatalog']"),
+                 branch, inbound.find("set-variable[@name='requestedModel']"),
+                 inbound.find("set-header[@name='Authorization'][@exists-action='delete']"),
+                 inbound.find("set-backend-service"), inbound.find("authentication-managed-identity")]
+        self.assertEqual([children.index(node) for node in order], sorted(children.index(node) for node in order))
+        when = branch.find("when")
+        self.assertEqual([node.tag for node in when], ["rate-limit-by-key", "return-response"])
+        limit = when.find("rate-limit-by-key")
+        self.assertEqual(limit.get("counter-key"), '@("claude-foundry:models:rpm:" + (string)context.Variables["callerKey"])')
+        self.assertEqual(limit.get("calls"), "{{per-user-rate-limit}}")
+        self.assertEqual(limit.get("renewal-period"), "60")
+        self.assertEqual(when.find("return-response/set-status").get("code"), "200")
+        self.assertEqual(when.findtext("return-response/set-header[@name='Content-Type']/value"), "application/json")
+        self.assertEqual(when.findtext("return-response/set-body"), '@((string)context.Variables["modelCatalog"])')
+        self.assertNotIn("Request.Body", ET.tostring(branch, encoding="unicode"))
+        for statement in ("llm-token-limit", "limit-concurrency", "authentication-managed-identity", "send-request", "set-backend-service", "forward-request"):
+            self.assertIsNone(branch.find(f".//{statement}"))
+        models = ET.parse(ROOT / "apim/policies/claude-models.xml").getroot()
+        for section in ("inbound", "backend", "outbound", "on-error"):
+            self.assertEqual([node.tag for node in models.find(section)], ["base"])
+        health = ET.parse(ROOT / "infra/tofu/policies/health.xml").getroot()
+        self.assertIsNone(health.find("inbound/base"))
+        self.assertEqual(health.findtext("inbound/return-response/set-body"), "healthy")
+        tofu = (ROOT / "infra/tofu/main.tf").read_text()
+        operation = tofu.split("    models = {", 1)[1].split("    }", 1)[0]
+        self.assertIn('method       = "GET"', operation)
+        self.assertIn('url_template = "/v1/models"', operation)
+        self.assertIn('apim/policies/claude-models.xml', operation)
+        self.assertIn('model_catalog_base64 = base64encode(jsonencode(local.public_model_catalog))', tofu)
+        named_values = tofu.split("  named_values = {", 1)[1].split("\n  }", 1)[0]
+        self.assertNotIn("model_catalog", named_values)
+
+    def test_discovery_workflow_is_opt_in_read_only_and_artifact_only(self):
+        workflow = (ROOT / ".github/workflows/sync-models.yml").read_text()
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertRegex(workflow, r"cron: '[0-9]+ [0-9]+ \* \* \*'")
+        self.assertIn("if: vars.MODEL_DISCOVERY_ENABLED == 'true'", workflow)
+        self.assertIn("environment: model-discovery", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+        for secret in ("AZURE_MODEL_DISCOVERY_CLIENT_ID", "AZURE_MODEL_DISCOVERY_TENANT_ID"):
+            self.assertIn(f"${{{{ secrets.{secret} }}}}", workflow)
+        for forbidden in ("secrets.AZURE_CLIENT_ID", "secrets.AZURE_TENANT_ID", "tofu ", "az deployment", "az rest", "git push", "create-pull-request", "repository_dispatch", "gh workflow", "workflow_run:"):
+            self.assertNotIn(forbidden, workflow)
+        deploy = (ROOT / ".github/workflows/deploy.yml").read_text()
+        actions = re.findall(r"uses: ([^\s]+)", workflow)
+        for action in actions:
+            self.assertRegex(action, r"@[0-9a-f]{40}$")
+            self.assertIn(action, deploy)
+        self.assertIn("scripts/sync_claude_models.py", workflow)
+        self.assertIn('--report-file "${RUNNER_TEMP}/model-discovery/report.json"', workflow)
+        self.assertIn('git show "${GITHUB_SHA}:${MODEL_CATALOG_FILE}"', workflow)
+        self.assertIn("ref: ${{ github.sha }}", workflow)
+
+    def test_deploy_freezes_reviewed_catalog_from_commit_never_rediscovers_at_apply(self):
+        workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        self.assertIn("MODEL_CATALOG_FILE: ${{ vars.MODEL_CATALOG_FILE }}", workflow)
+        frozen = 'git show "${GITHUB_SHA}:${MODEL_CATALOG_FILE}" > "${RUNNER_TEMP}/model-catalog.json"'
+        self.assertEqual(workflow.count(frozen), 2)
+        self.assertEqual(workflow.count('export MODEL_CATALOG_FILE="${RUNNER_TEMP}/model-catalog.json"'), 2)
+        self.assertNotIn("sync_claude_models.py", workflow)
+        self.assertIn("${{ runner.temp }}/model-catalog.json", workflow)
+        self.assertIn('"model_catalog_sha256": catalog_sha256', workflow)
+        self.assertIn('assert context["model_catalog_sha256"] ==', workflow)
+        self.assertIn('assert context["inputs_sha256"] == digest', workflow)
+        for job in ("  plan:", "  deploy:"):
+            section = workflow.split(job, 1)[1].split("\n  smoke:", 1)[0]
+            self.assertLess(section.index("ref: ${{ github.sha }}"), section.index(frozen))
+            self.assertLess(section.index(frozen), section.index("python3 scripts/tofu/generate_tfvars.py"))
+
+    def test_workflow_approval_hashes_reject_catalog_or_embedded_input_changes(self):
+        workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        plan_code = textwrap.dedent(workflow.split("python3 - <<'PY' >", 1)[1].split("\n", 1)[1].split("\n          PY", 1)[0])
+        apply_code = textwrap.dedent(workflow.split("python3 - <<'PY'\n", 1)[1].split("\n          PY", 1)[0])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "infra/tofu").mkdir(parents=True)
+            (root / "infra/tofu/.terraform.lock.hcl").write_text("synthetic lockfile")
+            (root / "approved-plan").mkdir()
+            catalog_path = root / "catalog.json"
+            catalog_bytes = (ROOT / "scripts/test/fixtures/model-discovery/catalog.json").read_bytes()
+            catalog_path.write_bytes(catalog_bytes)
+            inputs_path = root / "inputs.tfvars.json"
+            inputs_bytes = json.dumps({"model_catalog": json.loads(catalog_bytes)}).encode()
+            inputs_path.write_bytes(inputs_bytes)
+            env = {**os.environ, "RUNNER_TEMP": directory, "MODEL_CATALOG_FILE": str(catalog_path),
+                   "GITHUB_SHA": "a" * 40, "GITHUB_RUN_ID": "1", "DEPLOYMENT_MODE": "existing",
+                   "ACCEPT_ANTHROPIC_MARKETPLACE_TERMS": "false", "ENVIRONMENT_PROFILE": "poc",
+                   "ARM_SUBSCRIPTION_ID": "synthetic", "TOFU_STATE_SUBSCRIPTION_ID": "synthetic",
+                   "TOFU_STATE_RG": "synthetic", "TOFU_STATE_STORAGE_ACCOUNT": "synthetic",
+                   "TOFU_STATE_CONTAINER": "synthetic", "TOFU_STATE_KEY": "synthetic"}
+
+            def run(code):
+                return subprocess.run([sys.executable, "-B", "-c", code], cwd=root, env=env, capture_output=True, text=True, timeout=30)
+
+            plan = run(plan_code)
+            self.assertEqual(plan.returncode, 0, plan.stderr)
+            (root / "approved-plan/run-context.json").write_text(plan.stdout)
+            self.assertEqual(run(apply_code).returncode, 0)
+            for path in (catalog_path, inputs_path):
+                original = path.read_bytes()
+                path.write_bytes(original + b" ")
+                self.assertNotEqual(run(apply_code).returncode, 0)
+                path.write_bytes(original)
+
+
+class MarkdownLinkScanTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / "repo"
+        self.root.mkdir()
+        (self.root / "README.md").write_text("[valid](README.md)\n")
+
+    def scan(self):
+        scanner = (ROOT / "scripts/test/validate.sh").read_text().split("python3 - <<'PY'\n", 1)[1].split("\nPY", 1)[0]
+        # Fail even if a walker enters an excluded directory but later skips its files.
+        guard = '''from pathlib import Path
+import sys
+boundary = Path.cwd()
+def deny_traversal(event, args):
+    if event in {"open", "os.scandir"} and isinstance(args[0], str):
+        path = Path(args[0]).absolute()
+        if path.is_relative_to(boundary):
+            assert not set(path.relative_to(boundary).parts) & {
+                "claudecodepoc-hard", ".git", ".terraform", "node_modules",
+                "cache", ".cache", "__pycache__", ".pytest_cache"}, "visited excluded directory"
+            assert not path.is_symlink(), "followed symlink"
+sys.addaudithook(deny_traversal)
+'''
+        return subprocess.run([sys.executable, "-B", "-c", guard + scanner], cwd=self.root,
+                              capture_output=True, text=True, timeout=10)
+
+    def test_prunes_retained_child_and_generated_directories_before_walking(self):
+        for name in ("claudecodepoc-hard", ".git", ".terraform", "node_modules",
+                     "cache", ".cache", "__pycache__", ".pytest_cache"):
+            directory = self.root / name / "nested"
+            directory.mkdir(parents=True)
+            (directory / "broken.md").write_text("[broken](missing.md)\n")
+        result = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_own_broken_link_fails_including_azure_source(self):
+        for name in ("docs", ".azure"):
+            with self.subTest(directory=name):
+                directory = self.root / name
+                directory.mkdir()
+                page = directory / "broken.md"
+                page.write_text("[broken](missing.md)\n")
+                result = self.scan()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"broken Markdown link: {name}/broken.md -> missing.md", result.stderr)
+                page.unlink()
+
+    def test_does_not_follow_directory_or_markdown_symlinks(self):
+        outside = self.root.parent / "outside"
+        outside.mkdir()
+        (outside / "broken.md").write_text("[broken](missing.md)\n")
+        (self.root / "linked-directory").symlink_to(outside, target_is_directory=True)
+        (self.root / "linked.md").symlink_to(outside / "broken.md")
+        result = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)

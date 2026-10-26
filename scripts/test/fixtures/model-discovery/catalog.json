@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "account_resource_id": "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/foundry",
+  "base_url": "https://foundry.services.ai.azure.com/anthropic",
+  "default_model": "claude-opus-pinned",
+  "models": [
+    {
+      "id": "claude-opus-pinned",
+      "display_name": "Synthetic pinned Opus",
+      "description": "Synthetic test deployment, not a live model.",
+      "model_name": "claude-opus-test",
+      "model_version": "test-1",
+      "sku": "GlobalStandard"
+    },
+    {
+      "id": "claude-haiku-pinned",
+      "display_name": "Synthetic pinned Haiku",
+      "description": "Synthetic test deployment, not a live model.",
+      "model_name": "claude-haiku-test",
+      "model_version": "test-1",
+      "sku": "GlobalStandard"
+    },
+    {
+      "id": "claude-orbit-fast",
+      "display_name": "Synthetic \"Orbit\" <fast> & café",
+      "description": "Untrusted metadata: ${not_a_template} {{not-a-named-value}} \\ <xml/> \"quotes\". No speed claim.",
+      "model_name": "claude-orbit-test",
+      "model_version": "test-2",
+      "sku": "FutureHostingSKU"
+    },
+    {
+      "id": "claude-sonnet-pinned",
+      "display_name": "Synthetic pinned Sonnet",
+      "description": "Synthetic test deployment, not a live model.",
+      "model_name": "claude-sonnet-test",
+      "model_version": "test-1",
+      "sku": "GlobalStandard"
+    }
+  ]
+}

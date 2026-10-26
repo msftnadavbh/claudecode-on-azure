@@ -17,14 +17,20 @@ python3 migration/tofu/test_generate_import_manifest.py
 
 python3 - <<'PY'
 from pathlib import Path
+import os
 import re
 
-for page in Path(".").glob("**/*.md"):
-    if ".terraform" in page.parts:
-        continue
-    for target in re.findall(r"\[[^]]*\]\(([^ )#]+)", page.read_text()):
-        if "://" not in target and not target.startswith("mailto:"):
-            assert (page.parent / target).exists(), f"broken Markdown link: {page} -> {target}"
+excluded = {"claudecodepoc-hard", ".git", ".terraform", "node_modules", "cache", ".cache", "__pycache__", ".pytest_cache"}
+for directory, directories, files in os.walk(".", followlinks=False):
+    directories[:] = [name for name in directories
+                      if name not in excluded and not (Path(directory) / name).is_symlink()]
+    for name in files:
+        page = Path(directory) / name
+        if page.suffix != ".md" or page.is_symlink():
+            continue
+        for target in re.findall(r"\[[^]]*\]\(([^ )#]+)", page.read_text()):
+            if "://" not in target and not target.startswith("mailto:"):
+                assert (page.parent / target).exists(), f"broken Markdown link: {page} -> {target}"
 PY
 
 tofu -chdir=infra/tofu fmt -check

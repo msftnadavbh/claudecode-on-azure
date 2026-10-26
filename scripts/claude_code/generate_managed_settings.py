@@ -52,7 +52,7 @@ def validate(args: argparse.Namespace) -> None:
 
 def build_settings(args: argparse.Namespace, helper_path: str, platform: str) -> dict[str, object]:
     """Return the single semantic policy, parameterized only by OS helper path."""
-    return {
+    settings = {
         "apiKeyHelper": str(PureWindowsPath(helper_path)) if platform == "windows" else shlex.quote(helper_path),
         "env": {
             "ANTHROPIC_BASE_URL": args.gateway_url,
@@ -66,6 +66,9 @@ def build_settings(args: argparse.Namespace, helper_path: str, platform: str) ->
             "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
         },
     }
+    if getattr(args, "enable_model_discovery", False):
+        settings["env"]["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
+    return settings
 
 
 def write_outputs(args: argparse.Namespace) -> dict[str, Path]:
@@ -96,6 +99,7 @@ def main() -> None:
     parser.add_argument("--opus-model", required=True)
     parser.add_argument("--sonnet-model", required=True)
     parser.add_argument("--haiku-model", required=True)
+    parser.add_argument("--enable-model-discovery", action="store_true", help="Opt in after publishing the gateway /v1/models endpoint.")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     try:

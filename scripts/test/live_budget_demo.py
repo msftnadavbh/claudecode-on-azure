@@ -6,8 +6,9 @@ import base64
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -29,8 +30,10 @@ POLICY = API + "/operations/messages/policies/policy"
 MODEL = "claude-opus-5-5"
 DEPLOYMENT = RG + "Microsoft.CognitiveServices/accounts/project-test-01/deployments/" + MODEL
 GATEWAY = "https://apim-claudecode-project-test-01.azure-api.net/claude/v1/messages"
-REFERENCE = Path("/tmp/opencode/claude55-live-private/candidate-policy.xml")
+# Offline provenance: policy_digest(reviewed text with REFERENCE_SHA), never learned from live XML.
 REFERENCE_SHA = "208f0de2beeb25261632e39f554f55e548fbae49357a47fc6e6924bcbb8d33be"
+STRUCTURAL_POLICY_DIGEST = "04ec3d941bd131994909d80468c72da684cdadbad29eb363f29e2a132721fd59"
+WINDOWS_HELPER = Path(__file__).resolve().parents[1] / "auth/apim-user-token-helper.windows.ps1"
 STATE_ROOT = Path.home() / ".local/state/claude-budget-demo"
 REMAINING, CONSUMED, MARKER = "x-demo-tokens-remaining", "x-demo-tokens-consumed", "x-budget-demo-run"
 RETRY = "x-demo-retry-after"
@@ -113,8 +116,22 @@ def capture(command):
 
 def token(resource=AUD, windows=False, min_ttl=900):
     if windows:
-        value = capture(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-                         "& 'C:\\Users\\nadavbh\\AppData\\Local\\claudecodepoc\\desktop-entra-pilot.cmd'; exit $LASTEXITCODE"])
+        require(resource == AUD, "windows_gateway_audience_required")
+        require(WINDOWS_HELPER.is_file(), "windows_helper_missing")
+        powershell = shutil.which("powershell.exe")
+        require(powershell, "windows_powershell_missing")
+        helper = str(WINDOWS_HELPER)
+        if os.name != "nt":
+            try:
+                converted = subprocess.run(["wslpath", "-w", helper], stdin=subprocess.DEVNULL,
+                                           capture_output=True, text=True, timeout=10, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                raise DemoError("windows_helper_path_failed") from None
+            helper = converted.stdout.strip()
+            require(converted.returncode == 0 and PureWindowsPath(helper).is_absolute()
+                    and not re.search(r"[\r\n\x00]", helper), "windows_helper_path_failed")
+        value = capture([powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                         "-File", helper, "-TenantId", TENANT, "-Audience", AUD, "-SubscriptionId", SUB])
     else:
         value = capture(["az", "account", "get-access-token", "--tenant", TENANT,
                          "--resource", resource, "--query", "accessToken", "--output", "tsv"])
@@ -198,9 +215,7 @@ def snapshot(credential, expected_policy_digest=None):
                 require(len(body["value"]) <= 20, "too_many_schemas")
                 paths.append(API + "/schemas/" + name)
     if expected_policy_digest is None:
-        reference = REFERENCE.read_text()
-        require(digest(reference) == REFERENCE_SHA, "strict_reference_changed")
-        expected_policy_digest = policy_digest(reference)
+        expected_policy_digest = STRUCTURAL_POLICY_DIGEST
     actual_policy_digest = policy_digest(values[API + "/policies/policy"]["properties"]["value"])
     if actual_policy_digest != expected_policy_digest:
         print(json.dumps({"context_drift_paths": [API + "/policies/policy"]}), flush=True)

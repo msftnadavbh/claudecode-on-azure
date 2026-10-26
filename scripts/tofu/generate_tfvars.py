@@ -2,7 +2,12 @@
 """Write deployment inputs from the CI environment as JSON tfvars."""
 import json
 import os
+from pathlib import Path
 import sys
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from model_catalog import read_catalog
 
 
 def required(name):
@@ -49,6 +54,9 @@ def values():
     mode = os.environ.get("DEPLOYMENT_MODE", "existing")
     if mode not in ("existing", "greenfield"):
         raise ValueError("DEPLOYMENT_MODE must be existing or greenfield")
+    catalog_file = os.environ.get("MODEL_CATALOG_FILE", "")
+    if catalog_file and mode == "greenfield":
+        raise ValueError("MODEL_CATALOG_FILE is not supported with greenfield")
     target_subscription = required("ARM_SUBSCRIPTION_ID") if mode == "greenfield" else ""
     foundry_subscription = required("FOUNDRY_SUBSCRIPTION_ID") if mode == "existing" else target_subscription
     foundry_resource_group = required("FOUNDRY_RESOURCE_GROUP") if mode == "existing" else required("AZURE_RESOURCE_GROUP")
@@ -148,6 +156,20 @@ def values():
         result["foundry_resource_id"] = f"/subscriptions/{target_subscription}/resourceGroups/{result['resource_group_name']}/providers/Microsoft.CognitiveServices/accounts/{foundry_account}"
         result["secondary_foundry_base_url"] = ""
         result["secondary_foundry_resource_id"] = ""
+    if catalog_file:
+        if secondary_foundry_base_url and not secondary_foundry_base_url.endswith("/anthropic"):
+            raise ValueError("MODEL_CATALOG_FILE requires the exact /anthropic secondary backend path")
+        for secondary, primary in ((secondary_foundry_base_url, result["foundry_base_url"]),
+                                   (secondary_foundry_subscription, foundry_subscription),
+                                   (secondary_foundry_resource_group, foundry_resource_group),
+                                   (secondary_foundry_account, foundry_account)):
+            if secondary and secondary.lower() != primary.lower():
+                raise ValueError("MODEL_CATALOG_FILE cannot use a distinct secondary Foundry account/backend")
+        result["model_catalog"] = read_catalog(
+            catalog_file, account_resource_id=result["foundry_resource_id"], base_url=result["foundry_base_url"],
+            default_model=result["opus_deployment_name"],
+            required_models=[result[f"{role}_deployment_name"] for role in ("opus", "sonnet", "haiku")],
+        )
     return result
 
 
@@ -155,8 +177,9 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) != 1:
         raise ValueError("usage: generate_tfvars.py OUTPUT")
+    inputs = values()
     with open(argv[0], "w", encoding="utf-8") as output:
-        json.dump(values(), output, sort_keys=True)
+        json.dump(inputs, output, sort_keys=True)
         output.write("\n")
 
 

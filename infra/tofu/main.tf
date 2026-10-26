@@ -60,6 +60,18 @@ locals {
     "haiku-model"                           = local.greenfield ? var.claude_model_deployment_name : var.haiku_deployment_name
   }
 
+  gateway_model_ids = distinct(concat([
+    local.named_values["opus-model"], local.named_values["sonnet-model"], local.named_values["haiku-model"]
+  ], var.model_catalog == null ? [] : sort([for model in var.model_catalog.models : model.id])))
+  gateway_model_metadata = var.model_catalog == null ? {} : { for model in var.model_catalog.models : model.id => model }
+  public_model_catalog = {
+    data = [for id in local.gateway_model_ids : {
+      id           = id
+      display_name = var.model_catalog == null ? id : local.gateway_model_metadata[id].display_name
+      description  = var.model_catalog == null ? "Configured gateway deployment" : local.gateway_model_metadata[id].description
+    }]
+  }
+
   operations = {
     messages = {
       display_name = "Create message"
@@ -72,6 +84,12 @@ locals {
       method       = "POST"
       url_template = "/v1/messages/count_tokens"
       policy_path  = "${path.module}/../../apim/policies/claude-count-tokens.xml"
+    }
+    models = {
+      display_name = "List approved models"
+      method       = "GET"
+      url_template = "/v1/models"
+      policy_path  = "${path.module}/../../apim/policies/claude-models.xml"
     }
     health = {
       display_name = "Gateway health"
@@ -309,7 +327,9 @@ resource "azurerm_api_management_api_policy" "claude" {
   api_name            = azurerm_api_management_api.claude[each.key].name
   api_management_name = each.value.name
   resource_group_name = local.effective_resource_group_name
-  xml_content         = file("${path.module}/../../apim/policies/claude-base.xml")
+  xml_content = templatefile("${path.module}/../../apim/policies/claude-base.xml", {
+    model_catalog_base64 = base64encode(jsonencode(local.public_model_catalog))
+  })
 
   depends_on = [
     azurerm_api_management_backend.foundry,
