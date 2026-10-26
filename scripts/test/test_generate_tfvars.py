@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import base64
 import copy
 from hashlib import sha256
 import json
@@ -281,18 +280,16 @@ class ModelCatalogTofuTests(unittest.TestCase):
         expected = {"data": [{key: models[identifier][key] for key in ("id", "display_name", "description")} for identifier in expected_ids]}
         self.assertEqual(result["public"], expected)
         root = ET.fromstring(result["policy"])
-        value = root.find("inbound/set-variable[@name='modelCatalog']").get("value")
-        payload = re.search(r'FromBase64String\("([A-Za-z0-9+/=]+)"\)', value).group(1)
-        self.assertEqual(json.loads(base64.b64decode(payload, validate=True)), expected)
+        self.assertIsNone(root.find("inbound/set-variable[@name='modelCatalog']"))
+        self.assertIsNone(root.find("inbound/set-variable[@name='requestedModel']"))
+        models_when = next(node for node in root.findall("inbound/choose/when")
+                           if node.get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
+        self.assertEqual([node.tag for node in models_when], ["rate-limit-by-key"])
         self.assertNotIn("${model_catalog_base64}", result["policy"])
         self.assertNotIn("{{not-a-named-value}}", result["policy"])
         self.assertNotIn("${not_a_template}", result["policy"])
         self.assertNotIn("FutureHostingSKU", result["policy"])
-        self.assertEqual(result["policy"].count(payload), 1)
-        returned = root.find(".//return-response/set-header[@name='Content-Type']/../set-body").text
-        self.assertEqual(returned, '@((string)context.Variables["modelCatalog"])')
-        membership = next(node.get("condition") for node in root.findall("inbound/choose/when") if 'JObject.Parse' in node.get("condition"))
-        self.assertEqual(membership, '@(!JObject.Parse((string)context.Variables["modelCatalog"])["data"].Any(model => (string)model["id"] == (string)context.Variables["requestedModel"]))')
+        self.assertNotIn("JObject.Parse((string)context.Variables[\"modelCatalog\"])", result["policy"])
 
     def test_public_order_prioritizes_role_pins_over_older_models_and_deduplicates(self):
         catalog = copy.deepcopy(CATALOG)

@@ -97,9 +97,9 @@ class GatewayPolicyTests(unittest.TestCase):
         assert 'scopes.Any(value => value == "{{claude-desktop-delegated-scope}}")' in auth
         assert 'return hasRole || ("{{claude-desktop-delegated-auth-enabled}}" == "true" && actor == "{{claude-desktop-client-id}}" && hasDesktopScope);' in auth
         assert inbound.find("./choose/when/return-response/set-status[@code='403']") is not None
-        model = inbound.find("set-variable[@name='requestedModel']")
-        assert model is not None and 'As<JObject>(preserveContent: true)' in model.get("value", "")
-        assert len(inbound.findall("choose/when/return-response/set-status[@code='400']")) == 1
+        assert inbound.find("set-variable[@name='requestedModel']") is None
+        assert inbound.find("set-variable[@name='modelCatalog']") is None
+        assert len(inbound.findall("choose/when/return-response/set-status[@code='400']")) == 0
         assert all(f"{{{{{name}}}}}" not in base for name in ("opus-model", "sonnet-model", "haiku-model"))
         assert inbound.find("set-variable[@name='callerKey']").get("value") == '@((string)context.Variables["callerTenantId"] + ":" + (string)context.Variables["callerObjectId"])'
         deleted_headers = {node.get("name", "").lower() for node in inbound.findall("set-header") if node.get("exists-action") == "delete"}
@@ -219,29 +219,25 @@ class GatewayPolicyTests(unittest.TestCase):
         assert workflow.count('scripts/foundry_preflight.py') >= 3
         assert 'os.walk(".", followlinks=False)' in (ROOT / "scripts/test/validate.sh").read_text()
 
-    def test_models_get_inherits_authorization_then_returns_before_body_or_backend(self):
+    def test_models_get_inherits_authorization_and_forwards_to_foundry(self):
         root = ET.parse(ROOT / "apim/policies/claude-base.xml").getroot()
         inbound = root.find("inbound")
         children = list(inbound)
         branch = next(node for node in inbound.findall("choose") if node.find("when").get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
         authorization = next(node for node in inbound.findall("choose") if node.find("when").get("condition") == '@(!(bool)context.Variables["callerAuthorized"])')
         order = [inbound.find("validate-azure-ad-token"), authorization,
-                 inbound.find("set-variable[@name='callerKey']"), inbound.find("set-variable[@name='modelCatalog']"),
-                 branch, inbound.find("set-variable[@name='requestedModel']"),
+                 inbound.find("set-variable[@name='callerKey']"), branch,
                  inbound.find("set-header[@name='Authorization'][@exists-action='delete']"),
                  inbound.find("set-backend-service"), inbound.find("authentication-managed-identity")]
         self.assertEqual([children.index(node) for node in order], sorted(children.index(node) for node in order))
         when = branch.find("when")
-        self.assertEqual([node.tag for node in when], ["rate-limit-by-key", "return-response"])
+        self.assertEqual([node.tag for node in when], ["rate-limit-by-key"])
         limit = when.find("rate-limit-by-key")
         self.assertEqual(limit.get("counter-key"), '@("claude-foundry:models:rpm:" + (string)context.Variables["callerKey"])')
         self.assertEqual(limit.get("calls"), "{{per-user-rate-limit}}")
         self.assertEqual(limit.get("renewal-period"), "60")
-        self.assertEqual(when.find("return-response/set-status").get("code"), "200")
-        self.assertEqual(when.findtext("return-response/set-header[@name='Content-Type']/value"), "application/json")
-        self.assertEqual(when.findtext("return-response/set-body"), '@((string)context.Variables["modelCatalog"])')
         self.assertNotIn("Request.Body", ET.tostring(branch, encoding="unicode"))
-        for statement in ("llm-token-limit", "limit-concurrency", "authentication-managed-identity", "send-request", "set-backend-service", "forward-request"):
+        for statement in ("llm-token-limit", "limit-concurrency", "authentication-managed-identity", "send-request", "return-response"):
             self.assertIsNone(branch.find(f".//{statement}"))
         models = ET.parse(ROOT / "apim/policies/claude-models.xml").getroot()
         for section in ("inbound", "backend", "outbound", "on-error"):
@@ -254,7 +250,6 @@ class GatewayPolicyTests(unittest.TestCase):
         self.assertIn('method       = "GET"', operation)
         self.assertIn('url_template = "/v1/models"', operation)
         self.assertIn('apim/policies/claude-models.xml', operation)
-        self.assertIn('model_catalog_base64 = base64encode(jsonencode(local.public_model_catalog))', tofu)
         named_values = tofu.split("  named_values = {", 1)[1].split("\n  }", 1)[0]
         self.assertNotIn("model_catalog", named_values)
 
