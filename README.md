@@ -28,22 +28,38 @@ You still provide external Blob state/container, Entra caller app/roles/consent,
 3. Dispatch the protected `deploy` workflow with matching `environment_profile` and `networking_profile`.
 4. Retain public smoke evidence, or run protected in-network `ha-smoke` for private or HA deployments.
 
-OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.12.0`. After an approved deployment, `/v1/models` reads ARM deployment inventory with APIM's managed identity; it does **not** proxy the unsupported Foundry `/anthropic/v1/models` route. Inference model validation remains backend-owned. Role pins remain configuration, not an inventory allowlist or protection against retargeting an existing deployment name. The optional [reviewed model catalog](docs/model-discovery.md) is a separate governance artifact. **These PR6 source changes have not been deployed.**
+OpenTofu is the only active deployment path: OpenTofu `1.12.3`, AzureRM `4.56.0`, and AzAPI `2.12.0`. After an approved deployment, `/v1/models` reads ARM deployment inventory with APIM's managed identity; it does **not** proxy the unsupported Foundry `/anthropic/v1/models` route. Inference model validation remains backend-owned. Role pins remain configuration, not an inventory allowlist or protection against retargeting an existing deployment name. The optional [reviewed model catalog](docs/model-discovery.md) is a separate governance artifact. **The bounded live publication below is operation-only, not deployment of the whole repository API policy or full IaC.**
 
 ## Configure Claude Code
 
 Use the bundled helpers on macOS, Linux, WSL, and native Windows; supply the caller tenant UUID and audience, then pilot the installed client on each OS. [Configure managed Claude Code settings](docs/claude-code-managed-settings.md) and run the [client canary](docs/claude-code-canary.md). Claude Desktop is an optional preview; a [local Gateway-mode Chat pilot](docs/windows-desktop-pilot.md) worked without registry policy or a new OIDC client.
 
-[Shared model discovery](docs/model-discovery.md) is opt-in for both clients. Both configuration generators accept `--enable-model-discovery`; enable it only after the owning gateway publishes and verifies `/v1/models`. Freshness is the gateway's 30-second cache TTL plus ARM propagation and the client's refresh (normally at launch), not instantaneous open-picker polling. The guide covers permissions/egress, cold/warm latency gates, governance collection, client configuration, and rollback.
+## Automatic model discovery
+
+After the dynamic reader is published, adding or removing a successful Anthropic/Claude deployment in the **same bound Foundry account** is reflected on a fresh gateway inventory read, **without a gateway redeploy**. Neither the reader nor the separate governance collector deploys models. Freshness is **30-second gateway cache + ARM propagation + client startup refresh**: it is not instant and does not poll an already-open picker. Configured default pins are not automatically upgraded; missing pins are not fabricated and may leave a client choosing the first remaining model.
+
+- **Terminal Claude Code:** discovery is off by default. Set `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` in the approved client environment, or append `--enable-model-discovery` to the [managed-settings generator](docs/claude-code-managed-settings.md). Preserve the existing `ANTHROPIC_BASE_URL`, `apiKeyHelper` and role pins. Restart Claude Code, then inspect `/model`; `availableModels` and `modelPicker.replaceBuiltInOptions` can hide discovered entries. This does not mean discovery is already enabled in any local CLI.
+- **Desktop:** after owner-approved backup/configuration review, use the [generator's](docs/desktop-deployment.md) `--enable-model-discovery` option: it sets `modelDiscoveryEnabled` and omits/removes the explicit `inferenceModels` list, which otherwise wins. The verified local pilot is a different helper-script profile, not that generated MDM/OIDC configuration. **Fully quit Desktop before restarting**; closing its window can leave background processes running.
+
+**CLI latency caveat:** its default discovery deadline is **3 seconds**, with no redirects. The live gateway's first cold read took **7.204 seconds** (helper acquisition was a separate 5.724 seconds), not an SLO or warm benchmark. A timeout can leave cached/fallback models. Windows Desktop success does **not** prove terminal discovery works. See [discovery bounds and verification limits](docs/model-discovery.md#freshness-bounds-and-failures).
+
+### Repository integration coverage versus live discovery verification
+
+| Client / OS | Repository integration coverage | Live discovery verified on 26 October 2026 |
+| --- | --- | --- |
+| Claude Code terminal — macOS / Linux / WSL / native Windows | Bundled helpers and generated settings supported | **NOT live-verified on any terminal OS** in this check. Historical Linux inference is separate; native Windows managed-mode execution remains unverified. |
+| Desktop — Windows | Windows configuration generator available | **3.6556.2.0**, actual **local Gateway/helper-script**, **not MDM/OIDC**: fresh four-model picker observed; **Opus 5.5 selected**. No new inference test. |
+| Desktop — macOS | `.mobileconfig` generator available | Actual device, native authentication and picker **UNTESTED**. |
+| Desktop — Linux | Desktop integration **not provided/validated by this repository** | No Linux Desktop installer/configuration claim; use the Terminal integration. |
 
 ### Live pilot status — 26 October 2026
 
-- The existing gateway now serves an authenticated discovery endpoint with **Opus 5.5 (default)** and **Opus 5**. Valid credentials returned the catalog; missing and malformed credentials returned `401`.
-- The documented Windows Desktop pilot is configured for discovery with its existing helper and authentication preserved. Its next-launch picker and end-to-end inference have not been verified.
-- This separately owned live pilot still serves a **static reviewed snapshot**, not dynamic Foundry inventory. PR6 has not changed it. The daily governance collector remains disabled until configured.
-- Only the discovery operation/policy and the single-PC profile were changed. **Full OpenTofu adoption remains pending**: live API identifiers and authentication still differ from the repository baseline, so do not apply the full configuration blindly.
+- The existing `models` **operation policy** now reads dynamic inventory: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5`, then `claude-opus-5`. The first three carry native family-default metadata. Authenticated bare GET returned `200`; missing auth returned `401`. No new denied-principal or malformed-token check was performed in this run.
+- Windows Desktop **3.6556.2.0** freshly discovered four models; the visible enabled picker showed **Opus 5.5 selected**, Sonnet 5.5, Haiku 4.5 and Opus 5. This was the Code-view model selector, not a new Chat inference or Code-tools workflow test. No inference was sent.
+- This publication changed **only the existing operation policy**: parent authentication, other cloud resources and the Desktop profile were preserved. The daily governance collector remains artifact-only and disabled until configured. Live add/remove/empty mutations, aliases/refusal fallback, revocation, long-lived refresh and fleet behavior were not verified.
+- **Full OpenTofu adoption remains pending**: live API identifiers and stricter authentication still differ from the repository baseline. Do not apply the full configuration or an old profile backup blindly.
 
-See the [bounded publication record](docs/model-discovery.md#2026-10-26-bounded-live-pilot--configuredapi-verified) and [Windows Desktop record](docs/windows-desktop-pilot.md#2026-10-26-discovery--configuredapi-verified) for evidence and recovery boundaries.
+See the [dynamic publication record](docs/model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified) and [Windows Desktop record](docs/windows-desktop-pilot.md#2026-10-26-dynamic-discovery--api-and-picker-verified) for evidence, untested paths and recovery boundaries. Earlier static-stage records are retained as superseded history.
 
 ## Validate
 

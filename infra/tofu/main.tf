@@ -324,7 +324,7 @@ resource "azurerm_api_management_api_policy" "claude" {
         haiku  = local.named_values["haiku-model"]
       }
     }))
-    inventory_pages = join("\n", [for page in range(3) : file("${path.module}/../../apim/policies/claude-models-page.xml")])
+    inventory_pages = file("${path.module}/../../apim/policies/claude-models-page.xml")
   })
 
   depends_on = [

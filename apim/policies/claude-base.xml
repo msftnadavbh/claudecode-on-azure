@@ -80,7 +80,9 @@
         <choose>
           <when condition="@(!context.Variables.ContainsKey(&quot;inventoryResult&quot;) || context.Variables[&quot;inventoryResult&quot;] == null)">
             <rate-limit-by-key calls="10" renewal-period="10" counter-key="@((string)JObject.Parse((string)context.Variables[&quot;inventoryState&quot;])[&quot;accountKey&quot;])" />
-            ${inventory_pages}
+            <retry condition="@((string)JObject.Parse((string)context.Variables[&quot;inventoryState&quot;])[&quot;next&quot;] != &quot;&quot; &amp;&amp; DateTime.UtcNow.Subtract((DateTime)context.Variables[&quot;inventoryStarted&quot;]).TotalSeconds &lt; 5)" count="2" interval="1" first-fast-retry="true">
+              ${inventory_pages}
+            </retry>
             <set-variable name="inventoryResult" value="@{
               try {
                 var state = JObject.Parse((string)context.Variables[&quot;inventoryState&quot;]);

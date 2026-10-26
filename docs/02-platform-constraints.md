@@ -12,7 +12,7 @@ These service limits shape the deployment. Validate current service availability
 | APIM is not a Traffic Manager Azure Endpoint | Optional public Traffic Manager uses external APIM FQDN endpoints. |
 | Foundry quota scope varies | A second resource or region does not automatically add effective quota. |
 
-After the dynamic policy is deployed, Foundry account deployment administrators control automatic publication of eligible deployments on fresh inventory reads. See the [runtime inventory and authorization boundary](model-discovery.md#runtime-inventory-and-authorization-boundary). The separately owned live pilot remains static.
+After the dynamic policy is deployed, Foundry account deployment administrators control automatic publication of eligible deployments on fresh inventory reads. See the [runtime inventory and authorization boundary](model-discovery.md#runtime-inventory-and-authorization-boundary). The separately owned live pilot has an [operation-only dynamic publication and Windows picker check](model-discovery.md#2026-10-26-dynamic-discovery--api-and-windows-picker-verified), not full IaC adoption.
 
 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` reduces credential exposure to child processes but is not same-user process isolation. APIM circuit breaking is gateway-instance-local and only responds to backend 5xx; it does not retry streaming POSTs.
 

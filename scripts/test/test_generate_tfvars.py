@@ -309,7 +309,12 @@ class ModelCatalogTofuTests(unittest.TestCase):
         self.assertIsNone(root.find("inbound/set-variable[@name='requestedModel']"))
         models_when = next(node for node in root.findall("inbound/choose/when")
                            if node.get("condition") == '@(context.Operation.Id == "models" && context.Request.Method == "GET")')
-        self.assertEqual(len(models_when.findall(".//send-request")), 3)
+        self.assertEqual(len(models_when.findall(".//send-request")), 1)
+        loop = models_when.find("choose/when/retry")
+        page = ET.parse(ROOT / "apim/policies/claude-models-page.xml").getroot()
+        self.assertEqual(loop.attrib, {"condition": page.find("when").get("condition"),
+                                       "count": "2", "interval": "1", "first-fast-retry": "true"})
+        self.assertEqual([node.tag for node in loop], ["choose"])
         self.assertEqual(len(models_when.findall(".//cache-lookup-value")), 1)
         self.assertEqual(len(models_when.findall(".//cache-store-value")), 1)
         for forbidden in ("${", "{{not-a-named-value}}", "FutureHostingSKU", "claude-orbit-fast"):
