@@ -3,6 +3,8 @@
 **Manual, opt-in, billable, and live-verified on the locked pilot.** This runner installs a
 temporary quota, demonstrates it, then restores the original **absent operation
 policy**. It does not leave a budget enabled for later interactive use.
+The recorded rehearsal predates the standalone helper-path and policy-pin changes;
+it is not live verification of those changes.
 
 ## Verified rehearsal
 
@@ -33,16 +35,30 @@ Recovery state is retained at `~/.local/state/claude-budget-demo/bda8e7b4-f526-4
   pilot user. Keep them stopped until restoration is confirmed. The temporary
   quota covers **all messages for that user**, not just this script.
 - Use this Linux/WSL workstation with already authenticated Linux and native
-  Windows Azure CLI sessions. The native helper must already exist at
-  `C:\Users\nadavbh\AppData\Local\claudecodepoc\desktop-entra-pilot.cmd`.
+  Windows Azure CLI sessions. Native Windows Azure CLI must already be installed
+  at `C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd`. The selected
+  subscription's cached metadata must match the locked subscription and tenant
+  IDs, with a `user` account in `AzureCloud` and state `Enabled`; the helper
+  checks this before requesting a token. Windows PowerShell must be available as
+  `powershell.exe`, with `wslpath` available on WSL. The runner invokes this root's
+  bundled `scripts/auth/apim-user-token-helper.windows.ps1` using `-File` and
+  explicit locked tenant, gateway audience, and subscription arguments. WSL
+  converts that path with `wslpath -w`; native Windows uses the Windows path
+  directly. The repository CMD does not forward arguments and is not used here.
+  Missing Windows prerequisites fail closed, never falling back to Linux tokens;
+  failures expose only fixed, redacted diagnostics, not tokens or raw CLI output.
+  The full runner still requires Linux/WSL for its unchanged POSIX recovery state.
   No login, consent, assignment, default subscription, client configuration,
   secret, or infrastructure changes are made.
-- Keep the reviewed strict API-policy reference at
-  `/tmp/opencode/claude55-live-private/candidate-policy.xml`; its SHA-256 is pinned
-  in the runner. It is read only for initial validation; the protected state
-  retains its canonical structural digest for subsequent checks and recovery.
-  Recovery does not require the temporary reference file. No other old snapshots
-  or scripts are read/imported.
+- Initial validation uses the reviewed constant `STRUCTURAL_POLICY_DIGEST`
+  (`04ec3d941bd131994909d80468c72da684cdadbad29eb363f29e2a132721fd59`), not a
+  temporary XML file or a hash learned from the live response. Its reviewed input
+  text SHA-256 is `208f0de2beeb25261632e39f554f55e548fbae49357a47fc6e6924bcbb8d33be`.
+  `policy_digest()` hashes recursive arrays of tag, sorted attributes, stripped
+  text/tail, and ordered children using `json.dumps(..., sort_keys=True)` and
+  SHA-256. The protected state retains the structural digest for subsequent
+  checks and recovery. No old snapshots, raw reference XML, or scripts are
+  read/imported.
 - Python 3.11+ standard library only; control-plane read access and permission
   to create/delete the single operation policy are required. Tokens stay in
   captured process output/memory, never command arguments or files. Local claim
@@ -159,7 +175,7 @@ failure or interruption during cleanup require the explicit restore command.
 Recovery waits 30 seconds before its ownership read (including ambiguous PUTs)
 and another 30 seconds after deletion/absence before verification. It acquires
 a fresh management token rather than reusing the run's token; all post-delete
-context checks use the saved policy digest even if the reference file is gone.
+context checks use the saved policy digest even if the runner's default pin changes.
 Run tokens require more than 900 seconds remaining; recovery's management and
 canary tokens require more than 120 seconds, so a still-valid short-lived cached
 token does not unnecessarily block restoration. Tenant/user/authorization checks

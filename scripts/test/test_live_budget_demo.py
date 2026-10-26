@@ -250,19 +250,74 @@ class DemoTests(unittest.TestCase):
                   "roles": ["Gateway.Invoke"], "scp": "AiGateway.Invoke", "exp": demo.time.time() + 3600}
         def jwt():
             return "abc." + base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=") + ".abc"
-        with patch.object(demo, "capture", side_effect=lambda command: jwt()) as capture:
+        with patch.object(demo, "capture", side_effect=lambda command: jwt()) as capture, \
+                patch.object(demo.os, "name", "nt"), patch.object(demo, "WINDOWS_HELPER") as helper, \
+                patch.object(demo.shutil, "which", return_value="powershell.exe"):
+            helper.is_file.return_value = True
+            helper.__str__.return_value = r"C:\standalone root\scripts\auth\apim-user-token-helper.windows.ps1"
             demo.token()
-            self.assertIn("--tenant", capture.call_args.args[0])
-            self.assertIn(demo.TENANT, capture.call_args.args[0])
+            self.assertEqual(capture.call_args.args[0], ["az", "account", "get-access-token", "--tenant", demo.TENANT,
+                                                       "--resource", demo.AUD, "--query", "accessToken", "--output", "tsv"])
+            demo.token("https://management.azure.com/")
+            self.assertIn("https://management.azure.com/", capture.call_args.args[0])
             demo.token(windows=True)
-            self.assertEqual(capture.call_args.args[0][0], "powershell.exe")
-            self.assertIn("desktop-entra-pilot.cmd", capture.call_args.args[0][-1])
+            self.assertEqual(capture.call_args.args[0], ["powershell.exe", "-NoProfile", "-NonInteractive",
+                                                       "-ExecutionPolicy", "Bypass", "-File", str(helper),
+                                                       "-TenantId", demo.TENANT, "-Audience", demo.AUD,
+                                                       "-SubscriptionId", demo.SUB])
+            self.process.assert_not_called()
             for field in ("tid", "oid", "aud", "ver", "appid", "roles", "scp", "exp"):
                 original = claims[field]
                 claims[field] = 0 if field == "exp" else [] if field == "roles" else "wrong"
-                with self.assertRaises(RuntimeError):
-                    demo.token()
+                for windows in (False, True):
+                    with self.subTest(field=field, windows=windows), self.assertRaises(demo.DemoError):
+                        demo.token(windows=windows)
                 claims[field] = original
+
+    def test_wsl_windows_helper_path_translation_and_failures(self):
+        helper = str(demo.WINDOWS_HELPER)
+        with patch.object(demo.os, "name", "posix"), patch.object(demo.shutil, "which", return_value="powershell.exe"), \
+                patch.object(demo, "capture", side_effect=demo.DemoError("capture reached")) as capture:
+            self.process.side_effect = None
+            for path in (r"C:\standalone root\scripts\auth\apim-user-token-helper.windows.ps1",
+                         r"\\wsl.localhost\Ubuntu\home\user\standalone root\scripts\auth\apim-user-token-helper.windows.ps1"):
+                with self.subTest(path=path):
+                    self.process.return_value = demo.subprocess.CompletedProcess([], 0, path + "\n", "")
+                    with self.assertRaisesRegex(demo.DemoError, "^capture reached$"):
+                        demo.token(windows=True)
+                    self.process.assert_called_with(["wslpath", "-w", helper], stdin=demo.subprocess.DEVNULL,
+                                                    capture_output=True, text=True, timeout=10, check=False)
+                    self.assertEqual(capture.call_args.args[0], ["powershell.exe", "-NoProfile", "-NonInteractive",
+                                                               "-ExecutionPolicy", "Bypass", "-File", path,
+                                                               "-TenantId", demo.TENANT, "-Audience", demo.AUD,
+                                                               "-SubscriptionId", demo.SUB])
+            capture.reset_mock()
+            for status, output in ((1, "SECRET"), (0, ""), (0, "relative.ps1"), (0, "/linux/helper.ps1"),
+                                   (0, "C:\\helper.ps1\nSECRET"), (0, "C:\\helper.ps1\x00SECRET")):
+                with self.subTest(status=status, output=output):
+                    self.process.return_value = demo.subprocess.CompletedProcess([], status, output, "SECRET")
+                    with self.assertRaisesRegex(demo.DemoError, "^windows_helper_path_failed$"):
+                        demo.token(windows=True)
+            for error in (FileNotFoundError("SECRET"), demo.subprocess.TimeoutExpired("SECRET", 10)):
+                self.process.side_effect = error
+                with self.assertRaisesRegex(demo.DemoError, "^windows_helper_path_failed$"):
+                    demo.token(windows=True)
+            capture.assert_not_called()
+            self.assertNotIn("SECRET", self.output.getvalue())
+
+    def test_windows_prerequisites_fail_without_linux_fallback(self):
+        with patch.object(demo, "capture") as capture, patch.object(demo, "WINDOWS_HELPER") as helper, \
+                patch.object(demo.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(demo.DemoError, "^windows_gateway_audience_required$"):
+                demo.token("https://management.azure.com/", windows=True)
+            helper.is_file.return_value = False
+            with self.assertRaisesRegex(demo.DemoError, "^windows_helper_missing$"):
+                demo.token(windows=True)
+            helper.is_file.return_value = True
+            with self.assertRaisesRegex(demo.DemoError, "^windows_powershell_missing$"):
+                demo.token(windows=True)
+            capture.assert_not_called()
+            self.process.assert_not_called()
 
     def test_restore_from_durable_state_and_tampering(self):
         self.mocked_run("etag_drift")
@@ -272,7 +327,7 @@ class DemoTests(unittest.TestCase):
         state = demo.load(directory)
         self.assertNotIn("phase", state)  # Missing phase is not a completed pre-PUT abort.
         self.etag = state["etag"]
-        with patch.object(demo, "REFERENCE", Path(self.temporary.name) / "missing-reference.xml"):
+        with patch.object(demo, "STRUCTURAL_POLICY_DIGEST", "b" * 64):
             demo.restored(directory, state)
         self.snapshots.assert_called_with("arm", expected_policy_digest=state["policy_digest"])
         self.assertEqual(sum(call.args == ("https://management.azure.com/",) for call in self.tokens.call_args_list), 3)
@@ -339,8 +394,13 @@ class DemoTests(unittest.TestCase):
             if path.endswith("/policies/policy"):
                 self.assertTrue(url.endswith("&format=rawxml"))
             return (200, {}, documents[path]) if path in documents else (404, {}, {})
-        with patch.object(demo, "http", side_effect=rest), patch.object(Path, "read_text", return_value=reference) as read, \
-                patch.object(demo, "REFERENCE_SHA", demo.digest(reference)):
+        with patch.object(demo, "http", side_effect=rest), \
+                patch.object(Path, "read_text", side_effect=AssertionError("reference file must not be read")):
+            with self.assertRaisesRegex(demo.DemoError, "strict_policy_changed"):
+                demo.snapshot("unused")
+        with patch.object(demo, "http", side_effect=rest), \
+                patch.object(Path, "read_text", side_effect=AssertionError("reference file must not be read")), \
+                patch.object(demo, "STRUCTURAL_POLICY_DIGEST", demo.policy_digest(reference)):
             context = demo.snapshot("unused")
             self.assertEqual(len(context), 13)
             self.assertNotIn("SECRET", json.dumps(context))
@@ -350,12 +410,12 @@ class DemoTests(unittest.TestCase):
             for resource in documents[demo.API + "/operations"]["value"]:
                 resource["etag"] = "new"
                 resource["systemData"] = {"lastModifiedAt": "now"}
-            read.side_effect = FileNotFoundError("reference gone")
-            self.assertEqual(demo.snapshot("unused", expected_policy_digest=context[demo.API + "/policies/policy"]), context)
-            read.side_effect = None
+            with patch.object(demo, "STRUCTURAL_POLICY_DIGEST", "b" * 64):
+                self.assertEqual(demo.snapshot("unused", expected_policy_digest=context[demo.API + "/policies/policy"]), context)
             documents[demo.API + "/policies/policy"]["properties"]["value"] = "<policies />"
-            with self.assertRaisesRegex(RuntimeError, "strict_policy_changed"):
-                demo.snapshot("unused")
+            for expected in (None, context[demo.API + "/policies/policy"]):
+                with self.assertRaisesRegex(RuntimeError, "strict_policy_changed"):
+                    demo.snapshot("unused", expected_policy_digest=expected)
             documents[demo.API + "/policies/policy"]["properties"]["value"] = reference
             documents[demo.API + "/products"]["nextLink"] = "https://other"
             with self.assertRaisesRegex(RuntimeError, "snapshot_pagination_unsupported"):
@@ -375,6 +435,14 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(demo.normalize(config), config)
         self.assertNotEqual(demo.policy_digest("<policies><inbound/><outbound/></policies>"),
                             demo.policy_digest("<policies><outbound/><inbound/></policies>"))
+
+    def test_reviewed_policy_pin_and_structure_algorithm(self):
+        self.assertEqual(demo.REFERENCE_SHA, "208f0de2beeb25261632e39f554f55e548fbae49357a47fc6e6924bcbb8d33be")
+        self.assertEqual(demo.STRUCTURAL_POLICY_DIGEST, "04ec3d941bd131994909d80468c72da684cdadbad29eb363f29e2a132721fd59")
+        xml = '<policies b="2" a="1"> text <inbound /> tail </policies>'
+        canonical = ["policies", [("a", "1"), ("b", "2")], "text", "", [["inbound", [], "", "tail", []]]]
+        self.assertEqual(demo.policy_digest(xml), demo.digest(json.dumps(canonical, sort_keys=True)))
+        self.assertEqual(demo.policy_digest(xml), demo.policy_digest('<policies a="1" b="2">text<inbound/>tail</policies>'))
 
     def test_nonobject_and_invalid_json_response_redacted(self):
         self.transport.side_effect = None

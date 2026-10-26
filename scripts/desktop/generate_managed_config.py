@@ -58,6 +58,9 @@ def build_settings(args: argparse.Namespace) -> dict[str, str]:
         "skillCreationEnabled": "false",
         "toolSearchEnabled": "false",
     }
+    if getattr(args, "enable_model_discovery", False):
+        values["modelDiscoveryEnabled"] = "true"
+        del values["inferenceModels"]
     return dict(sorted(values.items()))
 
 
@@ -139,12 +142,14 @@ def write_outputs(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     policy_key = POLICY_KEYS[args.windows_scope]
     lines = ["Windows Registry Editor Version 5.00", "", f"[{policy_key}]"]
     lines.extend(f'"{key}"="{value.replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"' for key, value in settings.items())
+    if getattr(args, "enable_model_discovery", False):
+        lines.append('"inferenceModels"=-')  # An existing explicit list overrides native discovery.
     windows = output_dir / "claude-desktop-managed.reg"
     windows.write_bytes(b"\xff\xfe" + ("\r\n".join(lines) + "\r\n").encode("utf-16le"))
 
     removal = output_dir / "claude-desktop-managed-remove.reg"
     remove_lines = ["Windows Registry Editor Version 5.00", "", f"[{policy_key}]"]
-    remove_lines.extend(f'"{key}"=-' for key in settings)
+    remove_lines.extend(f'"{key}"=-' for key in sorted(set(settings) | {"inferenceModels"}))
     removal.write_bytes(b"\xff\xfe" + ("\r\n".join(remove_lines) + "\r\n").encode("utf-16le"))
     return macos, windows, removal
 
@@ -160,6 +165,7 @@ def main() -> None:
     parser.add_argument("--sonnet-model", required=True)
     parser.add_argument("--opus-model", required=True)
     parser.add_argument("--haiku-model", required=True)
+    parser.add_argument("--enable-model-discovery", action="store_true", help="Opt in after publishing /v1/models; remove the explicit model list.")
     parser.add_argument("--windows-scope", choices=("machine", "user"), default="machine")
     parser.add_argument("--disable-cowork", action="store_true")
     parser.add_argument("--output-dir", required=True)

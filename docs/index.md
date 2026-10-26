@@ -17,6 +17,7 @@ The active deployment path is OpenTofu only. It creates no custom enterprise gat
 - [Managed Claude Code settings](claude-code-managed-settings.md)
 - [Client canary](claude-code-canary.md)
 - [Desktop preview](desktop-deployment.md)
+- [Shared model discovery (opt-in, repository only)](model-discovery.md)
 
 ## Focused live pilot evidence (not full IaC validation)
 

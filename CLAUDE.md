@@ -2,6 +2,10 @@
 
 Claude Code is the primary supported client baseline. This repository uses generic Anthropic gateway mode because APIM, not the client, owns Foundry authentication. Claude Desktop is an optional preview only.
 
+## Repository boundary
+
+Work from this standalone outer root. The ignored `claudecodepoc-hard/` checkout is retained historical material: do not edit it, run tests there, or depend on its Git metadata, providers, caches, or helpers. Historical paths in `findings.md` are not current runtime instructions. Project-local `.claude/settings.local.json` is an ignored regular file whose helper belongs to this root; it is not a link to the retained checkout.
+
 ## Managed production settings
 
 Set centrally:

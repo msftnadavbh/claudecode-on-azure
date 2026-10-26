@@ -79,6 +79,7 @@ jobs:
       FOUNDRY_SUBSCRIPTION_ID: ${{ vars.FOUNDRY_SUBSCRIPTION_ID }}
       FOUNDRY_RESOURCE_GROUP: ${{ vars.FOUNDRY_RESOURCE_GROUP }}
       FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
+      MODEL_CATALOG_FILE: ${{ vars.MODEL_CATALOG_FILE }}
       FOUNDRY_PROJECT_NAME: ${{ vars.FOUNDRY_PROJECT_NAME }}
       FOUNDRY_LOCATION: ${{ vars.FOUNDRY_LOCATION }}
       CLAUDE_MODEL_DEPLOYMENT_NAME: ${{ vars.CLAUDE_MODEL_DEPLOYMENT_NAME }}
@@ -156,6 +157,10 @@ jobs:
       - name: Plan OpenTofu deployment
         run: |
           umask 077
+          if [[ -n "${MODEL_CATALOG_FILE}" ]]; then
+            git show "${GITHUB_SHA}:${MODEL_CATALOG_FILE}" > "${RUNNER_TEMP}/model-catalog.json"
+            export MODEL_CATALOG_FILE="${RUNNER_TEMP}/model-catalog.json"
+          fi
           python3 scripts/tofu/generate_tfvars.py "${RUNNER_TEMP}/inputs.tfvars.json"
           tofu -chdir=infra/tofu init -input=false -lockfile=readonly -backend-config="subscription_id=${TOFU_STATE_SUBSCRIPTION_ID}" -backend-config="resource_group_name=${TOFU_STATE_RG}" -backend-config="storage_account_name=${TOFU_STATE_STORAGE_ACCOUNT}" -backend-config="container_name=${TOFU_STATE_CONTAINER}" -backend-config="key=${TOFU_STATE_KEY}" -backend-config="use_azuread_auth=true" -backend-config="use_oidc=true"
           if [[ "${DEPLOYMENT_MODE}" == existing ]]; then
@@ -177,7 +182,8 @@ jobs:
           from pathlib import Path
           from hashlib import sha256
           digest = lambda path: sha256(Path(path).read_bytes()).hexdigest()
-          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "deployment_mode": os.environ["DEPLOYMENT_MODE"], "accept_anthropic_marketplace_terms": os.environ["ACCEPT_ANTHROPIC_MARKETPLACE_TERMS"] == "true", "environment_profile": os.environ["ENVIRONMENT_PROFILE"], "inputs_sha256": digest(f'{os.environ["RUNNER_TEMP"]}/inputs.tfvars.json'), "lockfile_sha256": digest("infra/tofu/.terraform.lock.hcl"), "run_id": os.environ["GITHUB_RUN_ID"], "state": {"subscription": os.environ["TOFU_STATE_SUBSCRIPTION_ID"], "resource_group": os.environ["TOFU_STATE_RG"], "storage_account": os.environ["TOFU_STATE_STORAGE_ACCOUNT"], "container": os.environ["TOFU_STATE_CONTAINER"], "key": os.environ["TOFU_STATE_KEY"]}, "target_subscription": os.environ["ARM_SUBSCRIPTION_ID"]}, sort_keys=True))
+          catalog_sha256 = digest(os.environ["MODEL_CATALOG_FILE"]) if os.environ.get("MODEL_CATALOG_FILE") else None
+          print(json.dumps({"commit": os.environ["GITHUB_SHA"], "deployment_mode": os.environ["DEPLOYMENT_MODE"], "accept_anthropic_marketplace_terms": os.environ["ACCEPT_ANTHROPIC_MARKETPLACE_TERMS"] == "true", "environment_profile": os.environ["ENVIRONMENT_PROFILE"], "inputs_sha256": digest(f'{os.environ["RUNNER_TEMP"]}/inputs.tfvars.json'), "model_catalog_sha256": catalog_sha256, "lockfile_sha256": digest("infra/tofu/.terraform.lock.hcl"), "run_id": os.environ["GITHUB_RUN_ID"], "state": {"subscription": os.environ["TOFU_STATE_SUBSCRIPTION_ID"], "resource_group": os.environ["TOFU_STATE_RG"], "storage_account": os.environ["TOFU_STATE_STORAGE_ACCOUNT"], "container": os.environ["TOFU_STATE_CONTAINER"], "key": os.environ["TOFU_STATE_KEY"]}, "target_subscription": os.environ["ARM_SUBSCRIPTION_ID"]}, sort_keys=True))
           PY
       - name: Upload approved deployment summary
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -188,6 +194,7 @@ jobs:
             ${{ runner.temp }}/secondary-foundry-preflight.json
             ${{ runner.temp }}/plan-summary.json
             ${{ runner.temp }}/run-context.json
+            ${{ runner.temp }}/model-catalog.json
           if-no-files-found: error
           retention-days: 90
 
@@ -218,6 +225,10 @@ jobs:
       - name: Verify and apply approved OpenTofu plan
         run: |
           umask 077
+          if [[ -n "${MODEL_CATALOG_FILE}" ]]; then
+            git show "${GITHUB_SHA}:${MODEL_CATALOG_FILE}" > "${RUNNER_TEMP}/model-catalog.json"
+            export MODEL_CATALOG_FILE="${RUNNER_TEMP}/model-catalog.json"
+          fi
           python3 scripts/tofu/generate_tfvars.py "${RUNNER_TEMP}/inputs.tfvars.json"
           python3 - <<'PY'
           import json, os
@@ -229,6 +240,7 @@ jobs:
           assert context["deployment_mode"] == os.environ["DEPLOYMENT_MODE"]
           assert context["accept_anthropic_marketplace_terms"] == (os.environ["ACCEPT_ANTHROPIC_MARKETPLACE_TERMS"] == "true")
           assert context["inputs_sha256"] == digest(f'{os.environ["RUNNER_TEMP"]}/inputs.tfvars.json')
+          assert context["model_catalog_sha256"] == (digest(os.environ["MODEL_CATALOG_FILE"]) if os.environ.get("MODEL_CATALOG_FILE") else None)
           assert context["lockfile_sha256"] == digest("infra/tofu/.terraform.lock.hcl")
           assert context["target_subscription"] == os.environ["ARM_SUBSCRIPTION_ID"]
           assert context["state"] == {"subscription": os.environ["TOFU_STATE_SUBSCRIPTION_ID"], "resource_group": os.environ["TOFU_STATE_RG"], "storage_account": os.environ["TOFU_STATE_STORAGE_ACCOUNT"], "container": os.environ["TOFU_STATE_CONTAINER"], "key": os.environ["TOFU_STATE_KEY"]}

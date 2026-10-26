@@ -1,0 +1,71 @@
+name: sync-models
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-models
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    # Repository-level opt-in; the protected environment holds the separate read-only identity.
+    if: vars.MODEL_DISCOVERY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: model-discovery
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FOUNDRY_SUBSCRIPTION_ID: ${{ vars.FOUNDRY_SUBSCRIPTION_ID }}
+      FOUNDRY_RESOURCE_GROUP: ${{ vars.FOUNDRY_RESOURCE_GROUP }}
+      FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
+      FOUNDRY_BASE_URL: ${{ vars.FOUNDRY_BASE_URL }}
+      ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}
+      MODEL_CATALOG_FILE: ${{ vars.MODEL_CATALOG_FILE }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require the dedicated read-only identity and explicit target
+        env:
+          DISCOVERY_CLIENT_ID: ${{ secrets.AZURE_MODEL_DISCOVERY_CLIENT_ID }}
+          DISCOVERY_TENANT_ID: ${{ secrets.AZURE_MODEL_DISCOVERY_TENANT_ID }}
+        run: |
+          for value in "${DISCOVERY_CLIENT_ID}" "${DISCOVERY_TENANT_ID}" "${FOUNDRY_SUBSCRIPTION_ID}" "${FOUNDRY_RESOURCE_GROUP}" "${FOUNDRY_ACCOUNT_NAME}" "${FOUNDRY_BASE_URL}" "${ANTHROPIC_DEFAULT_OPUS_MODEL}"; do
+            [[ -n "${value}" ]] || { echo 'Missing dedicated discovery identity or target configuration.' >&2; exit 1; }
+          done
+      - name: Azure login with the read-only discovery identity
+        uses: azure/login@718491048c7421e7840f2ec36345bc913f3b3570 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_MODEL_DISCOVERY_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_MODEL_DISCOVERY_TENANT_ID }}
+          subscription-id: ${{ vars.FOUNDRY_SUBSCRIPTION_ID }}
+      - name: Generate review artifacts only
+        run: |
+          umask 077
+          mkdir -p "${RUNNER_TEMP}/model-discovery"
+          if [[ -n "${MODEL_CATALOG_FILE}" ]]; then
+            git show "${GITHUB_SHA}:${MODEL_CATALOG_FILE}" > "${RUNNER_TEMP}/model-discovery/catalog.json"
+          fi
+          python3 scripts/sync_claude_models.py \
+            --subscription "${FOUNDRY_SUBSCRIPTION_ID}" \
+            --resource-group "${FOUNDRY_RESOURCE_GROUP}" \
+            --account "${FOUNDRY_ACCOUNT_NAME}" \
+            --expected-base-url "${FOUNDRY_BASE_URL}" \
+            --default-model "${ANTHROPIC_DEFAULT_OPUS_MODEL}" \
+            --catalog-file "${RUNNER_TEMP}/model-discovery/catalog.json" \
+            --report-file "${RUNNER_TEMP}/model-discovery/report.json"
+      - name: Upload catalog and report for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: claude-model-discovery-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/model-discovery/*.json
+          if-no-files-found: error
+          retention-days: 90
