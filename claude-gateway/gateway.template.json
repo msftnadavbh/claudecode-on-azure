@@ -1,0 +1,50 @@
+{
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 8443,
+    "public_url": null,
+    "tls": {
+      "cert": "/etc/claude-gateway/tls.crt",
+      "key": "/etc/claude-gateway/tls.key"
+    }
+  },
+  "oidc": {
+    "issuer": null,
+    "client_id": null,
+    "client_secret": "${file:/etc/claude-gateway/oidc-secret}",
+    "groups_claim": null,
+    "allowed_groups": [],
+    "scopes": ["openid", "profile", "email", "offline_access"]
+  },
+  "session": {
+    "jwt_secret": "${file:/etc/claude-gateway/session-secret}",
+    "ttl_hours": 1
+  },
+  "store": {
+    "postgres_url": "postgresql://127.0.0.1:5432/claude_gateway?sslmode=disable",
+    "username": "claude_gateway",
+    "password": "${file:/etc/claude-gateway/database-secret}"
+  },
+  "upstreams": [
+    {"name": "foundry", "provider": "foundry", "resource": null, "auth": {"use_azure_ad": true}}
+  ],
+  "auto_include_builtin_models": false,
+  "models": [],
+  "managed": {
+    "policies": [
+      {
+        "match": {"groups": []},
+        "code": {
+          "availableModels": [],
+          "enforceAvailableModels": true,
+          "model": null,
+          "env": {
+            "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+          }
+        }
+      },
+      {"match": {}, "code": {"availableModels": []}}
+    ]
+  }
+}

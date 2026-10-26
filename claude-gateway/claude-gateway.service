@@ -1,0 +1,39 @@
+[Unit]
+Description=Native Claude apps gateway (isolated POC)
+Wants=network-online.target
+After=network-online.target postgresql.service
+Requires=postgresql.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=claude-gateway
+Group=claude-gateway
+StateDirectory=claude-gateway
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/claude-gateway
+# Clean environment prevents accidental Azure environment/CLI credential fallback.
+ExecStart=/usr/bin/env -i HOME=/var/lib/claude-gateway PATH=/usr/bin:/bin CLAUDE_CONFIG_DIR=/var/lib/claude-gateway DISABLE_UPDATES=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 /usr/local/lib/claude-gateway/claude gateway --config /etc/claude-gateway/gateway.yaml
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

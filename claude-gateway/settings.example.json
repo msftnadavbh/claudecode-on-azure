@@ -1,0 +1,14 @@
+{
+  "public_url": "https://REPLACE_WITH_PRIVATE_DNS_HOST:8443",
+  "tenant_id": "REPLACE_WITH_ENTRA_TENANT_UUID",
+  "client_id": "REPLACE_WITH_ENTRA_APP_UUID",
+  "groups_claim": "groups",
+  "allowed_groups": ["REPLACE_WITH_PILOT_GROUP_OBJECT_UUID"],
+  "foundry_resource": "REPLACE_WITH_TOFU_FOUNDRY_RESOURCE_NAME_OUTPUT",
+  "models": [
+    {"id": "REPLACE_WITH_CANONICAL_CLAUDE_MODEL_ID", "deployment": "REPLACE_WITH_FOUNDRY_DEPLOYMENT_NAME"}
+  ],
+  "claude_version": "REPLACE_WITH_APPROVED_EXACT_VERSION",
+  "claude_sha256": "REPLACE_WITH_SHA256_FROM_VERIFIED_SIGNED_RELEASE_MANIFEST",
+  "signed_release_verified": false
+}
